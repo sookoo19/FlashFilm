@@ -64,10 +64,33 @@
 ---
 
 ## 4. ブランチ戦略（Git/GitHub）
-- main：リリース用
-- develop：統合開発用
-- feature/<機能名>：機能ごとブランチ
-  - 例：`feature/camera-screen`、`feature/image-processing`、`feature/ai-processing`
+### メインブランチ
+main          # プロダクション環境
+develop       # 開発統合ブランチ
+
+### 機能開発ブランチ
+feature/camera-screen
+feature/image-processing
+feature/ai-integration
+feature/storage-sharing
+
+### リリースブランチ
+release/v1.0.0
+
+### ホットフィックス
+hotfix/critical-bug
+
+### 開発ワークフロー
+graph LR
+    A[タスク選択] --> B[feature/ブランチ作成]
+    B --> C[ローカル開発]
+    C --> D[テスト実行]
+    D --> E[コミット]
+    E --> F[PR作成]
+    F --> G[コードレビュー]
+    G --> H[developへマージ]
+    H --> I[統合テスト]
+    I --> J[mainへマージ]
 
 ---
 
