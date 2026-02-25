@@ -50,7 +50,9 @@ export default [
         'warn',
         { argsIgnorePattern: '^_' },
       ],
+      quotes: ['error', 'single'], // シングルクォートを強制
       'prettier/prettier': 'warn',
+      'jsx-quotes': ['error', 'prefer-single'],
     },
     settings: {
       react: {
