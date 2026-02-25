@@ -40,17 +40,17 @@ export default function App() {
           screenOptions={{ headerShown: false, contentStyle: styles.container }}
         >
           {/* name は画面の名前、component は表示する画面の中身（コンポーネント）です */}
-          <Stack.Screen name="Camera" component={CameraScreen} />
+          <Stack.Screen name='Camera' component={CameraScreen} />
 
           {/* 2つ目の画面も同じように登録します（ここへ遷移できるようになります） */}
           <Stack.Screen
-            name="ImageProcessing"
+            name='ImageProcessing'
             component={ImageProcessingScreen}
           />
         </Stack.Navigator>
 
         {/* ステータスバーを light（明るい文字）にして、黒背景でも見やすくします */}
-        <StatusBar style="light" />
+        <StatusBar style='light' />
       </NavigationContainer>
     </SafeAreaProvider>
   );
