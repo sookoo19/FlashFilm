@@ -63,6 +63,9 @@ const CameraScreen = () => {
   // CameraView への参照（ref）を持ちます（takePictureAsyncを呼ぶため）
   const cameraRef = useRef<CameraViewClass | null>(null);
 
+  // カメラの向きを覚える状態です（初期は背面カメラ）
+  const [facing, setFacing] = useState<'front' | 'back'>('back');
+
   // 画面が表示された後や、permissionが変わった時に実行する処理です
   useEffect(() => {
     // permission が null のときは、まだ権限状態が確定していない可能性があります
@@ -130,6 +133,12 @@ const CameraScreen = () => {
     }
   };
 
+  // カメラの向きを切り替える処理です
+  const handleToggleFacing = () => {
+    // front ↔ back を入れ替えます
+    setFacing(prev => (prev === 'back' ? 'front' : 'back'));
+  };
+
   // 撮った写真を「使う」処理です（次の画面へ渡します）
   const handleUsePhoto = () => {
     // プレビューがないなら何もしません
@@ -183,12 +192,20 @@ const CameraScreen = () => {
             ref={cameraRef} // 撮影のために ref を渡します
             style={styles.camera} // カメラ表示を画面いっぱいにします
             mode='picture' // 静止画モードにします
+            facing={facing} // ← 状態を反映
             flash={FLASH_MODE} // フラッシュ設定を固定で渡します
             onCameraReady={() => setIsReady(true)} // 準備できたら撮影可能にします
           />
 
           {/* 下側の操作エリアです */}
           <View style={styles.controls}>
+            {/* 現在のカメラ向きを表示・切り替えるボタンです */}
+            <Pressable style={styles.switchButton} onPress={handleToggleFacing}>
+              <Text style={styles.switchText}>
+                {facing === 'back' ? 'Switch to Front' : 'Switch to Back'}
+              </Text>
+            </Pressable>
+
             {/* フラッシュ状態の説明文です */}
             <Text style={styles.flashText}>Flash locked ON</Text>
 
@@ -252,7 +269,7 @@ const styles = StyleSheet.create({
     width: 160, // ボタンの幅
     paddingVertical: 14, // 上下の余白
     borderRadius: 999, // 丸いボタンにします
-    backgroundColor: '#f0f0f0', // 背景を明るい色にします
+    backgroundColor: '#f0f0f0', // 背景色
     alignItems: 'center', // 中の要素を横方向で中央
     justifyContent: 'center', // 中の要素を縦方向で中央
   },
@@ -355,6 +372,25 @@ const styles = StyleSheet.create({
     color: '#f0f0f0', // 文字色
     fontSize: 15, // 文字サイズ
     fontWeight: '700', // 太め
+  },
+
+  // カメラ切り替えボタンの見た目です
+  switchButton: {
+    alignSelf: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#1f1f1f',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#3a3a3a',
+  },
+
+  // 切り替えボタンの文字の見た目です
+  switchText: {
+    color: '#f0f0f0',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 
