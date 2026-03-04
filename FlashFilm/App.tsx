@@ -13,6 +13,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 // 画面の見た目（スタイル）を作るために読み込みます
 import { StyleSheet } from 'react-native';
 
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 // カメラ画面のコンポーネント（表示する“1つの画面”）を読み込みます
 import CameraScreen from './src/screens/Camera/CameraScreen';
 
@@ -29,35 +31,44 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function App() {
   // ここから「画面に何を表示するか」を返します（Reactのルールです）
   return (
-    // SafeAreaProvider で、端末の安全領域（ノッチなど）を考慮できるようにします
-    <SafeAreaProvider>
-      {/* NavigationContainer で、アプリ全体の画面遷移を管理できるようにします。
-      この中にStack.Navigatorを置くのが基本パターンです。*/}
-      <NavigationContainer>
-        {/* Stack.Navigator で、「どんな画面があるか」と「共通設定」をまとめます */}
-        <Stack.Navigator
-          // headerShown:false で上のヘッダーを非表示、contentStyle で画面の背景などを統一します
-          screenOptions={{ headerShown: false, contentStyle: styles.container }}
-        >
-          {/* name は画面の名前、component は表示する画面の中身（コンポーネント）です */}
-          <Stack.Screen name='Camera' component={CameraScreen} />
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      {/* SafeAreaProvider で、端末の安全領域（ノッチなど）を考慮できるようにします */}
+      <SafeAreaProvider>
+        {/* NavigationContainer で、アプリ全体の画面遷移を管理できるようにします。
+        この中にStack.Navigatorを置くのが基本パターンです。*/}
+        <NavigationContainer>
+          {/* Stack.Navigator で、「どんな画面があるか」と「共通設定」をまとめます */}
+          <Stack.Navigator
+            // headerShown:false で上のヘッダーを非表示、contentStyle で画面の背景などを統一します
+            screenOptions={{
+              headerShown: false,
+              contentStyle: styles.container,
+            }}
+          >
+            {/* name は画面の名前、component は表示する画面の中身（コンポーネント）です */}
+            <Stack.Screen name='Camera' component={CameraScreen} />
 
-          {/* 2つ目の画面も同じように登録します（ここへ遷移できるようになります） */}
-          <Stack.Screen
-            name='ImageProcessing'
-            component={ImageProcessingScreen}
-          />
-        </Stack.Navigator>
+            {/* 2つ目の画面も同じように登録します（ここへ遷移できるようになります） */}
+            <Stack.Screen
+              name='ImageProcessing'
+              component={ImageProcessingScreen}
+            />
+          </Stack.Navigator>
 
-        {/* ステータスバーを light（明るい文字）にして、黒背景でも見やすくします */}
-        <StatusBar style='light' />
-      </NavigationContainer>
-    </SafeAreaProvider>
+          {/* ステータスバーを light（明るい文字）にして、黒背景でも見やすくします */}
+          <StatusBar style='light' />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 // ここで画面のスタイルをまとめて作ります（毎回新規作成しないので効率がよいです）
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
+
   // container という名前のスタイルを定義します（画面全体で使います）
   container: {
     // flex:1 で画面いっぱいに広げます

@@ -34,6 +34,8 @@ import type { CapturedPhoto } from '../../types/camera';
 // 画面名と、画面に渡すパラメータの型を読み込みます
 import type { RootStackParamList } from '../../types/navigation.ts';
 
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+
 // この画面（Camera）からのナビゲーション型を作ります（型安全にするため）
 type CameraScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList, // アプリ全体の画面とパラメータの一覧
@@ -42,6 +44,11 @@ type CameraScreenNavigationProp = NativeStackNavigationProp<
 
 // フラッシュの固定設定を作ります（この例では常にON）
 const FLASH_MODE: FlashMode = 'on';
+const MIN_ZOOM = 0; // expo-camera の最小ズーム。端末の広角がここにマップされる
+const MAX_ZOOM = 0.55; // 過度なデジタルズームを抑えるため上限を絞る
+const clampZoom = (value: number) =>
+  Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+const PINCH_ZOOM_SENSITIVITY = 0.2; // ピンチの効きを抑えめに
 
 // ここが「カメラ画面」コンポーネント本体です
 const CameraScreen = () => {
@@ -65,6 +72,9 @@ const CameraScreen = () => {
 
   // カメラの向きを覚える状態です（初期は背面カメラ）
   const [facing, setFacing] = useState<'front' | 'back'>('back');
+  const [zoom, setZoom] = useState<number>(0);
+  const zoomRef = useRef<number>(0);
+  const pinchStartZoom = useRef<number>(0);
 
   // 画面が表示された後や、permissionが変わった時に実行する処理です
   useEffect(() => {
@@ -77,6 +87,10 @@ const CameraScreen = () => {
     }
     // permission と requestPermission が変わったら、この処理をやり直します
   }, [permission, requestPermission]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   // permission がまだ取得できていない時は、読み込み中表示にします
   if (!permission) {
@@ -135,8 +149,8 @@ const CameraScreen = () => {
 
   // カメラの向きを切り替える処理です
   const handleToggleFacing = () => {
-    // front ↔ back を入れ替えます
     setFacing(prev => (prev === 'back' ? 'front' : 'back'));
+    setZoom(0); // 切替時はリセット
   };
 
   // 撮った写真を「使う」処理です（次の画面へ渡します）
@@ -144,8 +158,12 @@ const CameraScreen = () => {
     // プレビューがないなら何もしません
     if (!preview) return;
 
-    // 次画面に渡すために、アプリ内の型に変換します（ここではuriだけ）
-    const captured: CapturedPhoto = { uri: preview.uri };
+    // 次画面に渡すために、アプリ内の型に変換します
+    const captured: CapturedPhoto = {
+      uri: preview.uri,
+      width: preview.width,
+      height: preview.height,
+    };
 
     // 画像加工画面へ遷移して、写真データを渡します
     navigation.navigate('ImageProcessing', { photo: captured });
@@ -159,6 +177,22 @@ const CameraScreen = () => {
     // プレビュー状態を消します（これでカメラ表示に戻ります）
     setPreview(null);
   };
+
+  // カメラのズームを操作するためのピンチジェスチャー処理です
+  const pinchGesture = Gesture.Pinch()
+    .runOnJS(true)
+    .onBegin(() => {
+      pinchStartZoom.current = zoomRef.current;
+    })
+    .onUpdate(event => {
+      const nextZoom = clampZoom(
+        pinchStartZoom.current + (event.scale - 1) * PINCH_ZOOM_SENSITIVITY
+      );
+      setZoom(nextZoom);
+    })
+    .onEnd(() => {
+      pinchStartZoom.current = zoomRef.current;
+    });
 
   // 画面の見た目を返します
   return (
@@ -187,15 +221,24 @@ const CameraScreen = () => {
       ) : (
         // preview がないなら「カメラ画面」を表示します
         <>
-          {/* カメラ映像を表示する部分です */}
-          <CameraView
-            ref={cameraRef} // 撮影のために ref を渡します
-            style={styles.camera} // カメラ表示を画面いっぱいにします
-            mode='picture' // 静止画モードにします
-            facing={facing} // ← 状態を反映
-            flash={FLASH_MODE} // フラッシュ設定を固定で渡します
-            onCameraReady={() => setIsReady(true)} // 準備できたら撮影可能にします
-          />
+          <GestureDetector gesture={pinchGesture}>
+            <View style={styles.cameraWrapper}>
+              <CameraView
+                ref={cameraRef} // 撮影のために ref を渡します
+                style={styles.camera} // カメラ表示を画面いっぱいにします
+                mode='picture' // 静止画モードにします
+                facing={facing} // ← 状態を反映
+                flash={FLASH_MODE} // フラッシュ設定を固定で渡します
+                zoom={zoom} // ズーム値
+                onCameraReady={() => setIsReady(true)} // 準備できたら撮影可能にします
+              />
+              <View style={styles.zoomBadge}>
+                <Text
+                  style={styles.zoomBadgeText}
+                >{`${Math.round(zoom * 100)}%`}</Text>
+              </View>
+            </View>
+          </GestureDetector>
 
           {/* 下側の操作エリアです */}
           <View style={styles.controls}>
@@ -391,6 +434,27 @@ const styles = StyleSheet.create({
     color: '#f0f0f0',
     fontSize: 13,
     fontWeight: '600',
+  },
+
+  cameraWrapper: {
+    flex: 1,
+  },
+  zoomBadge: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  zoomBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });
 
