@@ -134,7 +134,10 @@ const CameraScreen = () => {
       setIsCapturing(true);
 
       // 実際に撮影します（quality: 1 は高画質寄り）
-      const photo = await cameraRef.current.takePictureAsync({ quality: 1 });
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 1,
+        base64: true,
+      });
 
       // 撮影した写真をプレビューとして保存します（これでUIがプレビューに切り替わります）
       setPreview(photo);
@@ -163,6 +166,7 @@ const CameraScreen = () => {
       uri: preview.uri,
       width: preview.width,
       height: preview.height,
+      base64: preview.base64,
     };
 
     // 画像加工画面へ遷移して、写真データを渡します
