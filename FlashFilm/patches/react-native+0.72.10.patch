@@ -1,0 +1,52 @@
+diff --git a/node_modules/react-native/scripts/react_native_pods_utils/script_phases.rb b/node_modules/react-native/scripts/react_native_pods_utils/script_phases.rb
+index eb1accb..cf926fe 100644
+--- a/node_modules/react-native/scripts/react_native_pods_utils/script_phases.rb
++++ b/node_modules/react-native/scripts/react_native_pods_utils/script_phases.rb
+@@ -46,7 +46,7 @@ def get_script_template(react_native_path, export_vars={})
+ 
+         SCRIPT_PHASES_SCRIPT="$RCT_SCRIPT_RN_DIR/scripts/react_native_pods_utils/script_phases.sh"
+         WITH_ENVIRONMENT="$RCT_SCRIPT_RN_DIR/scripts/xcode/with-environment.sh"
+-        /bin/sh -c "$WITH_ENVIRONMENT $SCRIPT_PHASES_SCRIPT"
++        "$WITH_ENVIRONMENT" "$SCRIPT_PHASES_SCRIPT"
+         EOS
+     result = ERB.new(template, trim_mode: '->').result(binding)
+     return result
+diff --git a/node_modules/react-native/scripts/react_native_pods_utils/script_phases.sh b/node_modules/react-native/scripts/react_native_pods_utils/script_phases.sh
+index c2a64a2..07ebf00 100755
+--- a/node_modules/react-native/scripts/react_native_pods_utils/script_phases.sh
++++ b/node_modules/react-native/scripts/react_native_pods_utils/script_phases.sh
+@@ -66,17 +66,18 @@ generateCodegenSchemaFromJavaScript () {
+ 
+     SRCS_PATTERN="$RCT_SCRIPT_JS_SRCS_PATTERN"
+     SRCS_DIR="$RCT_SCRIPT_JS_SRCS_DIR"
++    JS_SRCS=()
+     if [ "$SRCS_PATTERN" ]; then
+-        JS_SRCS=$(find "$PODS_TARGET_SRCROOT/$SRCS_DIR" -type f -name "$SRCS_PATTERN" -print0 | xargs -0)
++        while IFS= read -r -d '' file_path; do
++            JS_SRCS+=("$file_path")
++        done < <(find "$PODS_TARGET_SRCROOT/$SRCS_DIR" -type f -name "$SRCS_PATTERN" -print0)
+         echo "$RCT_SCRIPT_FILE_LIST" >> "${SCRIPT_OUTPUT_FILE_0}" 2>&1
+     else
+-        JS_SRCS="$PODS_TARGET_SRCROOT/$SRCS_DIR"
++        JS_SRCS+=("$PODS_TARGET_SRCROOT/$SRCS_DIR")
+         echo "$RCT_SCRIPT_JS_SRCS_DIR" >> "${SCRIPT_OUTPUT_FILE_0}" 2>&1
+     fi
+ 
+-    # shellcheck disable=SC2086
+-    # $JS_SRCS not having double quotations is intentional
+-    "$NODE_BINARY" "$CODEGEN_CLI_PATH/lib/cli/combine/combine-js-to-schema-cli.js" "$GENERATED_SCHEMA_FILE" $JS_SRCS
++    "$NODE_BINARY" "$CODEGEN_CLI_PATH/lib/cli/combine/combine-js-to-schema-cli.js" "$GENERATED_SCHEMA_FILE" "${JS_SRCS[@]}"
+ }
+ 
+ generateCodegenArtifactsFromSchema () {
+diff --git a/node_modules/react-native/scripts/xcode/with-environment.sh b/node_modules/react-native/scripts/xcode/with-environment.sh
+index f36190e..f5f27ce 100755
+--- a/node_modules/react-native/scripts/xcode/with-environment.sh
++++ b/node_modules/react-native/scripts/xcode/with-environment.sh
+@@ -43,5 +43,5 @@ fi
+ 
+ # Execute argument, if present
+ if [ -n "$1" ]; then
+-  $1
++    "$1"
+ fi

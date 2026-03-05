@@ -1,11 +1,12 @@
 // 画面遷移（Stack）の props 型を作るための型を読み込みます
 import { type NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Aden } from 'react-native-image-filter-kit';
 // 端末のフォトライブラリに保存するための Expo API を読み込みます
 import * as MediaLibrary from 'expo-media-library';
 // ステータスバー（上の時計など）の見た目を変えるために読み込みます
 import { StatusBar } from 'expo-status-bar';
-// 画面の状態（state）を持つために useState を読み込みます
-import { useState } from 'react';
+// 画面の状態（state）や副作用を扱うために useState/useEffect を読み込みます
+import { useCallback, useEffect, useState } from 'react';
 // 画面部品（アラート・画像・ボタン等）を読み込みます
 import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -37,11 +38,43 @@ const ImageProcessingScreen = ({
   const [mediaPermission, requestMediaPermission] =
     MediaLibrary.usePermissions();
 
+  // フィルターのオン/オフと抽出結果を管理します
+  const [isFilterOn, setIsFilterOn] = useState(true);
+  const [filteredUri, setFilteredUri] = useState<string | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+
+  useEffect(() => {
+    if (isFilterOn) {
+      setIsExtracting(true);
+      setFilteredUri(null);
+    } else {
+      setIsExtracting(false);
+    }
+  }, [isFilterOn]);
+
   // 「撮り直し」ボタンを押したときの処理です
   const handleRetake = () => {
     // 1つ前の画面（カメラ）に戻ります
     navigation.goBack();
   };
+
+  const handleFilterToggle = () => {
+    setIsFilterOn(prev => !prev);
+  };
+
+  const handleExtracted = useCallback(
+    (event: { nativeEvent: { uri?: string; error?: string } }) => {
+      const { uri, error } = event.nativeEvent;
+      if (error) {
+        console.warn('Filter extract error', error);
+      }
+      if (uri) {
+        setFilteredUri(uri);
+      }
+      setIsExtracting(false);
+    },
+    []
+  );
 
   // 「Continue」ボタンを押したときの処理です（保存するので async）
   const handleConfirm = async () => {
@@ -68,8 +101,22 @@ const ImageProcessingScreen = ({
         return;
       }
 
-      // 写真の uri（場所）を使ってフォトライブラリへ保存します
-      await MediaLibrary.saveToLibraryAsync(photo.uri);
+      if (isFilterOn && (isExtracting || !filteredUri)) {
+        Alert.alert(
+          '処理中です',
+          'フィルター適用が完了してから保存してください。'
+        );
+        return;
+      }
+
+      const targets = [photo.uri];
+      if (isFilterOn && filteredUri) {
+        targets.push(filteredUri);
+      }
+
+      for (const uri of targets) {
+        await MediaLibrary.saveToLibraryAsync(uri);
+      }
 
       // 保存できたら、最初の画面（Camera）まで戻ります
       navigation.popToTop();
@@ -88,8 +135,34 @@ const ImageProcessingScreen = ({
   return (
     // 画面全体の入れ物です
     <View style={styles.container}>
-      {/* 撮影した写真を表示します（uri は画像の場所です） */}
-      <Image source={{ uri: photo.uri }} style={styles.preview} />
+      <View style={styles.previewHolder}>
+        {isFilterOn ? (
+          <Aden
+            image={<Image source={{ uri: photo.uri }} style={styles.preview} />}
+            extractImageEnabled
+            onExtractImage={handleExtracted}
+          />
+        ) : (
+          <Image source={{ uri: photo.uri }} style={styles.preview} />
+        )}
+      </View>
+
+      <View style={styles.filterToggle}>
+        <Text style={styles.filterLabel}>プリセット: Aden</Text>
+        <Pressable
+          style={styles.filterSwitch}
+          onPress={handleFilterToggle}
+          disabled={isSaving}
+        >
+          <Text style={styles.filterSwitchText}>
+            {isFilterOn ? 'ON（元+フィルター保存）' : 'OFF（元のみ保存）'}
+          </Text>
+        </Pressable>
+      </View>
+
+      {isFilterOn && (isExtracting || !filteredUri) && (
+        <Text style={styles.filterNote}>フィルター適用中です…</Text>
+      )}
 
       {/* ボタンを置くエリアです */}
       <View style={styles.actions}>
@@ -122,9 +195,10 @@ const ImageProcessingScreen = ({
         </Pressable>
       </View>
 
-      {/* 今後ここに加工 UI を作る想定のメモです */}
       <Text style={styles.placeholderNote}>
-        Processing UI will live here (filters, save/share) in the next step.
+        {isFilterOn
+          ? 'フィルターON: 元画像とフィルター適用後の2枚を保存します。'
+          : 'フィルターOFF: 元画像のみ保存します。'}
       </Text>
 
       {/* 黒背景なので、ステータスバー文字を明るくします */}
@@ -137,8 +211,45 @@ const ImageProcessingScreen = ({
 const styles = StyleSheet.create({
   // 画面全体のスタイルです
   container: { flex: 1, backgroundColor: '#000' },
+  previewHolder: { flex: 1 },
   // 画像プレビューのスタイルです
   preview: { flex: 1 },
+  filterToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: '#0f0f0f',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#222',
+  },
+  filterLabel: {
+    color: '#f0f0f0',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  filterSwitch: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1f1f1f',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#3a3a3a',
+  },
+  filterSwitchText: {
+    color: '#f0f0f0',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterNote: {
+    color: '#bbb',
+    paddingHorizontal: 24,
+    paddingBottom: 8,
+    fontSize: 12,
+    letterSpacing: 0.2,
+  },
   // ボタンエリアのスタイルです
   actions: {
     // ボタンを横並びにします
