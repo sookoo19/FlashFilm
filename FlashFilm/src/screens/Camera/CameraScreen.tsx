@@ -13,10 +13,10 @@ import {
 
 // Expo Camera のカメラ表示と、型（TypeScript）と、権限フックを読み込みます
 import {
-  CameraView, // カメラ映像を表示するコンポーネント
+  Camera, // カメラ映像を表示するコンポーネント
+  CameraType,
+  FlashMode,
   type CameraCapturedPicture, // 撮影した写真データの型
-  type FlashMode, // フラッシュ設定の型
-  useCameraPermissions, // カメラ権限を確認・要求するためのフック
 } from 'expo-camera';
 
 // 画面遷移（ナビゲーション）を使うために読み込みます
@@ -24,9 +24,6 @@ import { useNavigation } from '@react-navigation/native';
 
 // Stackナビゲーションの「型付きのナビゲーション」型を読み込みます
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-// CameraView の ref（参照）用のクラス型を読み込みます（撮影メソッドを呼ぶため）
-import type CameraViewClass from 'expo-camera/build/CameraView';
 
 // 撮影した写真のアプリ内で使う型（例: uriだけ持つ）を読み込みます
 import type { CapturedPhoto } from '../../types/camera';
@@ -43,7 +40,7 @@ type CameraScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 // フラッシュの固定設定を作ります（この例では常にON）
-const FLASH_MODE: FlashMode = 'on';
+const FLASH_MODE: FlashMode = FlashMode.on;
 const MIN_ZOOM = 0; // expo-camera の最小ズーム。端末の広角がここにマップされる
 const MAX_ZOOM = 0.55; // 過度なデジタルズームを抑えるため上限を絞る
 const clampZoom = (value: number) =>
@@ -56,7 +53,7 @@ const CameraScreen = () => {
   const navigation = useNavigation<CameraScreenNavigationProp>();
 
   // カメラ権限の状態(permission)と、権限を要求する関数(requestPermission)を取得します
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission] = Camera.useCameraPermissions();
 
   // カメラが使える状態になったかを持つ状態です（準備できるまで撮影ボタンを無効化するため）
   const [isReady, setIsReady] = useState(false);
@@ -68,7 +65,7 @@ const CameraScreen = () => {
   const [preview, setPreview] = useState<CameraCapturedPicture | null>(null);
 
   // CameraView への参照（ref）を持ちます（takePictureAsyncを呼ぶため）
-  const cameraRef = useRef<CameraViewClass | null>(null);
+  const cameraRef = useRef<Camera | null>(null);
 
   // カメラの向きを覚える状態です（初期は背面カメラ）
   const [facing, setFacing] = useState<'front' | 'back'>('back');
@@ -227,12 +224,11 @@ const CameraScreen = () => {
         <>
           <GestureDetector gesture={pinchGesture}>
             <View style={styles.cameraWrapper}>
-              <CameraView
+              <Camera
                 ref={cameraRef} // 撮影のために ref を渡します
                 style={styles.camera} // カメラ表示を画面いっぱいにします
-                mode='picture' // 静止画モードにします
-                facing={facing} // ← 状態を反映
-                flash={FLASH_MODE} // フラッシュ設定を固定で渡します
+                type={facing === 'back' ? CameraType.back : CameraType.front} // ← 状態を反映
+                flashMode={FLASH_MODE} // フラッシュ設定を固定で渡します
                 zoom={zoom} // ズーム値
                 onCameraReady={() => setIsReady(true)} // 準備できたら撮影可能にします
               />
