@@ -1,14 +1,21 @@
 // 画面遷移（Stack）の props 型を作るための型を読み込みます
 import { type NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Aden } from 'react-native-image-filter-kit';
 // 端末のフォトライブラリに保存するための Expo API を読み込みます
 import * as MediaLibrary from 'expo-media-library';
 // ステータスバー（上の時計など）の見た目を変えるために読み込みます
 import { StatusBar } from 'expo-status-bar';
 // 画面の状態（state）や副作用を扱うために useState/useEffect を読み込みます
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
 // 画面部品（アラート・画像・ボタン等）を読み込みます
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  NativeModules,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 // アプリ内の「画面名」と「渡せるデータ」の型一覧を読み込みます
 import type { RootStackParamList } from '../../types/navigation';
@@ -20,6 +27,24 @@ type ImageProcessingScreenProps = NativeStackScreenProps<
   // このファイルの画面名（ImageProcessing）
   'ImageProcessing'
 >;
+
+type FilterExtractEvent = { nativeEvent: { uri?: string; error?: string } };
+
+type AdenProps = {
+  image: ReactElement;
+  extractImageEnabled?: boolean;
+  onExtractImage?: (event: FilterExtractEvent) => void;
+};
+
+const isImageFilterKitAvailable =
+  NativeModules.IFKExtractedImagesCache != null &&
+  NativeModules.IFKImageFilterManager != null;
+
+const Aden = isImageFilterKitAvailable
+  ? (require('react-native-image-filter-kit').Aden as (
+      props: AdenProps
+    ) => JSX.Element)
+  : null;
 
 // 画像加工（今はプレビュー＆保存）画面の本体です
 const ImageProcessingScreen = ({
@@ -42,15 +67,23 @@ const ImageProcessingScreen = ({
   const [isFilterOn, setIsFilterOn] = useState(true);
   const [filteredUri, setFilteredUri] = useState<string | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
+  const canUseFilter = Aden !== null;
 
   useEffect(() => {
+    if (!canUseFilter) {
+      setIsFilterOn(false);
+      setIsExtracting(false);
+      setFilteredUri(null);
+      return;
+    }
+
     if (isFilterOn) {
       setIsExtracting(true);
       setFilteredUri(null);
     } else {
       setIsExtracting(false);
     }
-  }, [isFilterOn]);
+  }, [canUseFilter, isFilterOn]);
 
   // 「撮り直し」ボタンを押したときの処理です
   const handleRetake = () => {
@@ -62,19 +95,16 @@ const ImageProcessingScreen = ({
     setIsFilterOn(prev => !prev);
   };
 
-  const handleExtracted = useCallback(
-    (event: { nativeEvent: { uri?: string; error?: string } }) => {
-      const { uri, error } = event.nativeEvent;
-      if (error) {
-        console.warn('Filter extract error', error);
-      }
-      if (uri) {
-        setFilteredUri(uri);
-      }
-      setIsExtracting(false);
-    },
-    []
-  );
+  const handleExtracted = useCallback((event: FilterExtractEvent) => {
+    const { uri, error } = event.nativeEvent;
+    if (error) {
+      console.warn('Filter extract error', error);
+    }
+    if (uri) {
+      setFilteredUri(uri);
+    }
+    setIsExtracting(false);
+  }, []);
 
   // 「Continue」ボタンを押したときの処理です（保存するので async）
   const handleConfirm = async () => {
@@ -136,7 +166,7 @@ const ImageProcessingScreen = ({
     // 画面全体の入れ物です
     <View style={styles.container}>
       <View style={styles.previewHolder}>
-        {isFilterOn ? (
+        {isFilterOn && Aden ? (
           <Aden
             image={<Image source={{ uri: photo.uri }} style={styles.preview} />}
             extractImageEnabled
@@ -147,18 +177,24 @@ const ImageProcessingScreen = ({
         )}
       </View>
 
-      <View style={styles.filterToggle}>
-        <Text style={styles.filterLabel}>プリセット: Aden</Text>
-        <Pressable
-          style={styles.filterSwitch}
-          onPress={handleFilterToggle}
-          disabled={isSaving}
-        >
-          <Text style={styles.filterSwitchText}>
-            {isFilterOn ? 'ON（元+フィルター保存）' : 'OFF（元のみ保存）'}
-          </Text>
-        </Pressable>
-      </View>
+      {canUseFilter ? (
+        <View style={styles.filterToggle}>
+          <Text style={styles.filterLabel}>プリセット: Aden</Text>
+          <Pressable
+            style={styles.filterSwitch}
+            onPress={handleFilterToggle}
+            disabled={isSaving}
+          >
+            <Text style={styles.filterSwitchText}>
+              {isFilterOn ? 'ON（元+フィルター保存）' : 'OFF（元のみ保存）'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Text style={styles.filterUnavailableNote}>
+          フィルター機能はこのビルドでは利用できないため、元画像のみ保存します。
+        </Text>
+      )}
 
       {isFilterOn && (isExtracting || !filteredUri) && (
         <Text style={styles.filterNote}>フィルター適用中です…</Text>
@@ -249,6 +285,17 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     fontSize: 12,
     letterSpacing: 0.2,
+  },
+  filterUnavailableNote: {
+    color: '#bbb',
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 8,
+    fontSize: 12,
+    letterSpacing: 0.2,
+    backgroundColor: '#0f0f0f',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#222',
   },
   // ボタンエリアのスタイルです
   actions: {
