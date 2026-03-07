@@ -1,0 +1,15 @@
+diff --git a/node_modules/@expo/cli/build/src/run/ios/appleDevice/AppleDevice.js b/node_modules/@expo/cli/build/src/run/ios/appleDevice/AppleDevice.js
+index 6fd1275..d6fe927 100644
+--- a/node_modules/@expo/cli/build/src/run/ios/appleDevice/AppleDevice.js
++++ b/node_modules/@expo/cli/build/src/run/ios/appleDevice/AppleDevice.js
+@@ -179,6 +179,10 @@ async function launchAppWithDeviceCtl(deviceId, bundleId) {
+                 throw new _errors.CommandError("APPLE_DEVICE_LOCKED", "Device is locked, unlock and try again.");
+             }
+         }
++        if (error instanceof _errors.CommandError && error.code === "SIMCTL_NOT_AVAILABLE") {
++            _log.Log.warn("Installed app, but automatic launch requires `xcrun devicectl` (Xcode 15+). Open the app manually on your device.");
++            return;
++        }
+         throw new _errors.CommandError(`There was an error launching app: ${error}`);
+     }
+ }
