@@ -32,6 +32,7 @@ export default [
         require: 'readonly',
         module: 'readonly',
         process: 'readonly',
+        __DEV__: 'readonly',
         __dirname: 'readonly',
       },
     },
