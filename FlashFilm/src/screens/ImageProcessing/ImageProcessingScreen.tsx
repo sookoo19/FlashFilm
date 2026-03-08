@@ -34,6 +34,10 @@ import {
   Text,
   // ネイティブの ViewManager 登録状況を確認するために使います
   UIManager,
+  // フィルターコンポーネントへ渡す style 型です
+  type StyleProp,
+  // フィルターコンポーネントへ渡す style 型です
+  type ViewStyle,
   // レイアウト用の箱です
   View,
 } from 'react-native';
@@ -93,14 +97,25 @@ type FilterExtractEvent = {
   };
 };
 
+// フィルター処理でエラーが起きた時のイベント型です
+type FilterErrorEvent = {
+  nativeEvent: {
+    message?: string;
+  };
+};
+
 // フィルターコンポーネントに渡す共通propsの型です
 type BaseFilterProps = {
   // 加工したい元画像です
   image: ReactElement;
+  // フィルター描画領域のスタイルです
+  style?: StyleProp<ViewStyle>;
   // true の時、加工後画像を一時ファイルとして取り出せます
   extractImageEnabled?: boolean;
   // 画像の取り出し完了時に呼ばれる関数です
   onExtractImage?: (event: FilterExtractEvent) => void;
+  // フィルター処理でエラーになった時に呼ばれる関数です
+  onFilteringError?: (event: FilterErrorEvent) => void;
 };
 
 // `ColorMatrix` 用の props 型です
@@ -273,6 +288,18 @@ const ImageProcessingScreen = ({
     }
   }, []);
 
+  // フィルター描画側のエラーを受け取る処理です
+  const handleFilteringError = useCallback((event: FilterErrorEvent) => {
+    // ネイティブ側のエラーメッセージを取り出します
+    const message = event.nativeEvent.message ?? 'Unknown filter error';
+
+    // 開発者向けログを残します
+    console.warn('Filter rendering error', message);
+
+    // 抽出待ち状態を解除します
+    setIsExtracting(false);
+  }, []);
+
   // プリセット選択時の処理です
   const handleSelectPreset = (preset: PresetKey) => {
     // 選ばれたプリセットを state に保存します
@@ -323,10 +350,18 @@ const ImageProcessingScreen = ({
     const withPreset =
       // Aden が選ばれている場合
       selectedPreset === 'aden' ? (
-        <Aden image={baseImage} />
+        <Aden
+          image={baseImage}
+          style={styles.preview}
+          onFilteringError={handleFilteringError}
+        />
       ) : selectedPreset === 'clarendon' ? (
         // Clarendon が選ばれている場合
-        <Clarendon image={baseImage} />
+        <Clarendon
+          image={baseImage}
+          style={styles.preview}
+          onFilteringError={handleFilteringError}
+        />
       ) : (
         // original の場合は元画像のまま
         baseImage
@@ -347,8 +382,12 @@ const ImageProcessingScreen = ({
       <ColorMatrix
         // 合成した色変換行列を渡します
         matrix={adjustmentMatrix}
+        // フィルター描画領域のサイズを維持します
+        style={styles.preview}
         // 編集後画像を一時ファイルとして取り出せるようにします
         extractImageEnabled
+        // フィルター描画エラー時の処理です
+        onFilteringError={handleFilteringError}
         // 取り出し完了時に呼ぶ関数です
         onExtractImage={handleExtracted}
         // 実際に加工する画像です
@@ -364,6 +403,8 @@ const ImageProcessingScreen = ({
     adjustments.saturation,
     // 抽出完了処理が変わったら再計算
     handleExtracted,
+    // 描画エラー処理が変わったら再計算
+    handleFilteringError,
     // 元画像URIが変わったら再計算
     photo.uri,
     // プリセットが変わったら再計算
