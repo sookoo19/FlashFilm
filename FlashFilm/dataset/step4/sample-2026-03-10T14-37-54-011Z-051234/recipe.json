@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "presetId": "flash_base",
+  "brightness": 0.4,
+  "contrast": 0,
+  "saturation": -1,
+  "temperature": 0,
+  "tint": 0,
+  "grain": 0,
+  "shadowHue": 220,
+  "shadowStrength": 0,
+  "highlightHue": 40,
+  "highlightStrength": 0,
+  "balance": 0,
+  "midtoneHue": 0,
+  "midtoneStrength": 0
+}

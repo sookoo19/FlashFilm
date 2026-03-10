@@ -45,19 +45,12 @@ import {
 // 明るさなどを調整する小さなUI部品を読み込みます
 import AdjustmentSlider from '../../components/AdjustmentSlider';
 
-// プリセットを選ぶUI部品を読み込みます
-import PresetSelector from '../../components/PresetSelector';
-
-// プリセット一覧の定義を読み込みます
-import { PRESET_OPTIONS } from '../../constants/presets';
-
-// 画像保存用の関数を読み込みます
 import {
-  // フォトライブラリ権限を確認・取得する関数です
-  requestMediaLibraryPermission,
-  // 画像URIをまとめて保存する関数です
-  saveImageUrisToLibrary,
-} from '../../services/storage/imageStorage';
+  DEFAULT_AI_EDIT_RECIPE,
+  type AiEditRecipe,
+} from '../../types/aiEditRecipe';
+
+import { saveDatasetSample } from '../../services/storage/datasetStorage';
 
 // 画像編集に関する型や定数を読み込みます
 import {
@@ -71,8 +64,6 @@ import {
   type AdjustmentKey,
   // 調整値全体の型です
   type AdjustmentState,
-  // プリセット名の型です
-  type PresetKey,
 } from '../../types/imageProcessing';
 
 // アプリ全体の画面遷移の型を読み込みます
@@ -150,7 +141,86 @@ const adjustmentKeys: readonly AdjustmentKey[] = [
   'contrast',
   // 彩度
   'saturation',
+  // 色温度
+  'temperature',
+  // 色かぶり
+  'tint',
+  // 粒子
+  'grain',
+  // シャドー
+  'shadow',
+  // ハイライト
+  'highlight',
+  // ミッドトーン
+  'midtone',
 ];
+
+const toTemperatureTintMatrix = (
+  temperature: number,
+  tint: number
+): number[] => {
+  const redScale = Math.max(0, 1 + temperature * 0.12 + tint * 0.06);
+  const greenScale = Math.max(0, 1 - Math.abs(tint) * 0.04);
+  const blueScale = Math.max(0, 1 - temperature * 0.12 - tint * 0.06);
+
+  return [
+    redScale,
+    0,
+    0,
+    0,
+    0,
+    0,
+    greenScale,
+    0,
+    0,
+    0,
+    0,
+    0,
+    blueScale,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+};
+
+const toToneBalanceMatrix = (
+  shadow: number,
+  highlight: number,
+  midtone: number,
+  grain: number
+): number[] => {
+  const redScale = Math.max(0, 1 + highlight * 0.1 - shadow * 0.05);
+  const greenScale = Math.max(0, 1 + midtone * 0.04 - grain * 0.03);
+  const blueScale = Math.max(0, 1 + shadow * 0.12 - highlight * 0.04);
+  const contrastLike = Math.max(0.85, 1 + grain * 0.06 + midtone * 0.03);
+
+  return [
+    redScale * contrastLike,
+    0,
+    0,
+    0,
+    0,
+    0,
+    greenScale * contrastLike,
+    0,
+    0,
+    0,
+    0,
+    0,
+    blueScale * contrastLike,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+};
 
 // `IFKImageFilter` の ViewManager が登録されているか確認します
 const hasIfkViewManager = (() => {
@@ -209,9 +279,6 @@ const ImageProcessingScreen = ({
   // 今保存中かどうかを覚えておく state です
   const [isSaving, setIsSaving] = useState(false);
 
-  // 今選ばれているプリセットです
-  const [selectedPreset, setSelectedPreset] = useState<PresetKey>('aden');
-
   // 明るさ・コントラスト・彩度の現在値です
   const [adjustments, setAdjustments] =
     useState<AdjustmentState>(DEFAULT_ADJUSTMENTS);
@@ -236,10 +303,8 @@ const ImageProcessingScreen = ({
 
   // 実際に画像へ効果を適用すべきかを判定します
   const shouldApplyEffect =
-    // フィルターが使えて、
-    canUseFilter &&
-    // プリセットが original 以外、または調整値が変わっている時だけ true
-    (selectedPreset !== 'original' || hasAdjustmentChanged);
+    // 調整値が変わっている時だけ true
+    hasAdjustmentChanged;
 
   // フィルター条件が変わった時に、抽出状態を更新します
   useEffect(() => {
@@ -256,7 +321,7 @@ const ImageProcessingScreen = ({
     setIsExtracting(true);
     // 以前の抽出結果は古いので消します
     setFilteredUri(null);
-  }, [adjustments, selectedPreset, shouldApplyEffect]);
+  }, [adjustments, shouldApplyEffect]);
 
   // 「撮り直し」ボタンを押した時の処理です
   const handleRetake = () => {
@@ -300,12 +365,6 @@ const ImageProcessingScreen = ({
     setIsExtracting(false);
   }, []);
 
-  // プリセット選択時の処理です
-  const handleSelectPreset = (preset: PresetKey) => {
-    // 選ばれたプリセットを state に保存します
-    setSelectedPreset(preset);
-  };
-
   // 調整値変更時の処理です
   const handleChangeAdjustment = (key: AdjustmentKey, nextValue: number) => {
     // その項目の最小値・最大値を取得します
@@ -337,8 +396,6 @@ const ImageProcessingScreen = ({
 
     // 動的に読み込んだライブラリから必要な機能を取り出します
     const {
-      Aden,
-      Clarendon,
       ColorMatrix,
       brightness: toBrightnessMatrix,
       contrast: toContrastMatrix,
@@ -346,35 +403,18 @@ const ImageProcessingScreen = ({
       concatColorMatrices,
     } = imageFilterKit;
 
-    // まずプリセットを適用します
-    const withPreset =
-      // Aden が選ばれている場合
-      selectedPreset === 'aden' ? (
-        <Aden
-          image={baseImage}
-          style={styles.preview}
-          onFilteringError={handleFilteringError}
-        />
-      ) : selectedPreset === 'clarendon' ? (
-        // Clarendon が選ばれている場合
-        <Clarendon
-          image={baseImage}
-          style={styles.preview}
-          onFilteringError={handleFilteringError}
-        />
-      ) : (
-        // original の場合は元画像のまま
-        baseImage
-      );
-
     // 明るさ・コントラスト・彩度の行列を1つにまとめます
     const adjustmentMatrix = concatColorMatrices([
-      // 明るさの変換
-      toBrightnessMatrix(adjustments.brightness),
-      // コントラストの変換
-      toContrastMatrix(adjustments.contrast),
-      // 彩度の変換
-      toSaturateMatrix(adjustments.saturation),
+      toBrightnessMatrix(adjustments.brightness + 1),
+      toContrastMatrix(adjustments.contrast + 1),
+      toSaturateMatrix(adjustments.saturation + 1),
+      toTemperatureTintMatrix(adjustments.temperature, adjustments.tint),
+      toToneBalanceMatrix(
+        adjustments.shadow,
+        adjustments.highlight,
+        adjustments.midtone,
+        adjustments.grain
+      ),
     ]);
 
     // プリセット後の画像にさらに色調整をかけます
@@ -391,7 +431,7 @@ const ImageProcessingScreen = ({
         // 取り出し完了時に呼ぶ関数です
         onExtractImage={handleExtracted}
         // 実際に加工する画像です
-        image={withPreset}
+        image={baseImage}
       />
     );
   }, [
@@ -401,14 +441,24 @@ const ImageProcessingScreen = ({
     adjustments.contrast,
     // 彩度が変わったら再計算
     adjustments.saturation,
+    // 色温度が変わったら再計算
+    adjustments.temperature,
+    // 色かぶりが変わったら再計算
+    adjustments.tint,
+    // 粒子が変わったら再計算
+    adjustments.grain,
+    // シャドーが変わったら再計算
+    adjustments.shadow,
+    // ハイライトが変わったら再計算
+    adjustments.highlight,
+    // ミッドトーンが変わったら再計算
+    adjustments.midtone,
     // 抽出完了処理が変わったら再計算
     handleExtracted,
     // 描画エラー処理が変わったら再計算
     handleFilteringError,
     // 元画像URIが変わったら再計算
     photo.uri,
-    // プリセットが変わったら再計算
-    selectedPreset,
     // フィルター適用有無が変わったら再計算
     shouldApplyEffect,
   ]);
@@ -424,15 +474,10 @@ const ImageProcessingScreen = ({
       // 保存中にします
       setIsSaving(true);
 
-      // フォトライブラリ権限を確認・要求します
-      const granted = await requestMediaLibraryPermission();
-
-      // 権限が無い時は保存できません
-      if (!granted) {
-        // ユーザーへ理由を伝えます
+      if (shouldApplyEffect && !canUseFilter) {
         Alert.alert(
           '保存できません',
-          '写真を保存するにはフォトライブラリへのアクセス許可が必要です。'
+          'このビルドでは編集画像を生成できないため、target.jpg を保存できません。'
         );
         return;
       }
@@ -443,16 +488,30 @@ const ImageProcessingScreen = ({
         return;
       }
 
-      // 保存対象の配列を作ります
-      const targets = [photo.uri];
+      const recipe: AiEditRecipe = {
+        ...DEFAULT_AI_EDIT_RECIPE,
+        brightness: adjustments.brightness,
+        contrast: adjustments.contrast,
+        saturation: adjustments.saturation,
+        temperature: Math.round(adjustments.temperature * 1000),
+        tint: Math.round(adjustments.tint * 100),
+        grain: adjustments.grain,
+        shadowStrength: adjustments.shadow,
+        highlightStrength: adjustments.highlight,
+        midtoneStrength: adjustments.midtone,
+      };
 
-      // 編集画像があるなら一緒に保存対象へ追加します
-      if (shouldApplyEffect && filteredUri) {
-        targets.push(filteredUri);
-      }
+      const targetUri = shouldApplyEffect ? filteredUri! : photo.uri;
 
-      // 画像をまとめて保存します
-      await saveImageUrisToLibrary(targets);
+      const saved = await saveDatasetSample({
+        targetUri,
+        recipe,
+      });
+
+      Alert.alert(
+        '保存しました',
+        `recipe.json と target.jpg を保存しました。\n保存先: ${saved.sampleId}`
+      );
 
       // 保存できたら先頭画面まで戻ります
       navigation.popToTop();
@@ -460,7 +519,10 @@ const ImageProcessingScreen = ({
       // 開発者向けログです
       console.error('Failed to save photo', error);
       // ユーザー向けメッセージです
-      Alert.alert('保存に失敗しました', 'もう一度お試しください。');
+      Alert.alert(
+        '保存に失敗しました',
+        error instanceof Error ? error.message : 'もう一度お試しください。'
+      );
     } finally {
       // 最後に保存中フラグを元に戻します
       setIsSaving(false);
@@ -474,62 +536,33 @@ const ImageProcessingScreen = ({
       {/* 上側の画像プレビューエリアです */}
       <View style={styles.previewHolder}>{previewContent}</View>
 
-      {/* フィルター機能が使える時だけ編集UIを表示します */}
-      {canUseFilter ? (
-        <View style={styles.editorPanel}>
-          {/* プリセット欄の見出しです */}
-          <Text style={styles.sectionTitle}>プリセット</Text>
+      <View style={styles.editorPanel}>
+        <Text style={styles.sectionTitle}>編集</Text>
 
-          {/* プリセット選択UIです */}
-          <PresetSelector
-            // 選択肢一覧
-            presets={PRESET_OPTIONS}
-            // 現在選択中のプリセット
-            selectedPreset={selectedPreset}
-            // 選択時の処理
-            onSelectPreset={handleSelectPreset}
-            // 保存中は操作させない
-            disabled={isSaving}
-          />
+        <View style={styles.adjustmentArea}>
+          {adjustmentKeys.map(key => {
+            const range = ADJUSTMENT_RANGES[key];
 
-          {/* 調整UI全体のエリアです */}
-          <View style={styles.adjustmentArea}>
-            {/* 編集欄の見出しです */}
-            <Text style={styles.sectionTitle}>編集</Text>
-
-            {/* 明るさ・コントラスト・彩度を順番に表示します */}
-            {adjustmentKeys.map(key => {
-              // その項目の表示名や範囲を取得します
-              const range = ADJUSTMENT_RANGES[key];
-
-              // 1項目分の調整UIを返します
-              return (
-                <AdjustmentSlider
-                  // React で一覧表示する時のキーです
-                  key={key}
-                  // ラベル名（例: 明るさ）
-                  label={range.label}
-                  // 現在の値
-                  value={adjustments[key]}
-                  // 最小値
-                  min={range.min}
-                  // 最大値
-                  max={range.max}
-                  // 増減の幅
-                  step={ADJUSTMENT_STEP}
-                  // 値変更時の処理
-                  onChange={nextValue => handleChangeAdjustment(key, nextValue)}
-                  // 保存中は操作できないようにする
-                  disabled={isSaving}
-                />
-              );
-            })}
-          </View>
+            return (
+              <AdjustmentSlider
+                key={key}
+                label={range.label}
+                value={adjustments[key]}
+                min={range.min}
+                max={range.max}
+                step={ADJUSTMENT_STEP}
+                onChange={nextValue => handleChangeAdjustment(key, nextValue)}
+                disabled={isSaving}
+              />
+            );
+          })}
         </View>
-      ) : (
-        // フィルター機能が使えない場合の説明文です
+      </View>
+
+      {!canUseFilter && (
         <Text style={styles.filterUnavailableNote}>
-          フィルター機能はこのビルドでは利用できないため、元画像のみ保存します。
+          このビルドでは編集プレビューを生成できないため、変更を加えて保存するには
+          Dev Client / Run Build が必要です。
         </Text>
       )}
 
@@ -564,7 +597,7 @@ const ImageProcessingScreen = ({
         >
           {/* 保存中は文字を切り替えます */}
           <Text style={styles.primaryText}>
-            {isSaving ? 'Saving...' : 'Continue'}
+            {isSaving ? 'Saving...' : 'Save'}
           </Text>
         </Pressable>
       </View>
@@ -572,8 +605,8 @@ const ImageProcessingScreen = ({
       {/* 今の保存内容を説明するメッセージです */}
       <Text style={styles.placeholderNote}>
         {shouldApplyEffect
-          ? '保存時に元画像と編集後画像を保存します。'
-          : '編集中の変更がないため、元画像のみ保存します。'}
+          ? '保存時に target.jpg と recipe.json を作成します。'
+          : '変更がないため、target.jpg は元画像として保存されます。'}
       </Text>
 
       {/* 黒背景なので、文字を見やすい light にします */}
