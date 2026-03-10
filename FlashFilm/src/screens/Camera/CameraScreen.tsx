@@ -325,6 +325,24 @@ const CameraScreen = () => {
                 <Text style={styles.captureText}>Capture</Text>
               )}
             </Pressable>
+
+            {/* 開発時は、権限状態に関係なく既定画像で進める導線を表示します */}
+            {__DEV__ && (
+              <Pressable
+                style={[
+                  styles.permissionDevButton,
+                  isLoadingDevDefaultPhoto && styles.permissionButtonDisabled,
+                ]}
+                onPress={handleUseDevDefaultPhoto}
+                disabled={isLoadingDevDefaultPhoto}
+              >
+                <Text style={styles.permissionDevButtonText}>
+                  {isLoadingDevDefaultPhoto
+                    ? 'Loading default photo...'
+                    : 'Use default photo (Dev only)'}
+                </Text>
+              </Pressable>
+            )}
           </View>
         </>
       )}

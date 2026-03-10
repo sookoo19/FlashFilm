@@ -35,17 +35,10 @@ export type AiEditRecipe = {
   temperature: number;
   tint: number;
   grain: number;
-  shadowHue: number;
-  shadowStrength: number;
-  highlightHue: number;
-  highlightStrength: number;
-  balance: number;
-  midtoneHue: number;
-  midtoneStrength: number;
 };
 
 export const DEFAULT_AI_EDIT_RECIPE: Readonly<AiEditRecipe> = {
-  version: 1,
+  version: 2,
   presetId: 'flash_base',
   brightness: 0,
   contrast: 0,
@@ -53,11 +46,4 @@ export const DEFAULT_AI_EDIT_RECIPE: Readonly<AiEditRecipe> = {
   temperature: 0,
   tint: 0,
   grain: 0,
-  shadowHue: 220,
-  shadowStrength: 0,
-  highlightHue: 40,
-  highlightStrength: 0,
-  balance: 0,
-  midtoneHue: 0,
-  midtoneStrength: 0,
 };

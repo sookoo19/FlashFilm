@@ -6,10 +6,7 @@ export type AdjustmentKey =
   | 'saturation'
   | 'temperature'
   | 'tint'
-  | 'grain'
-  | 'shadow'
-  | 'highlight'
-  | 'midtone';
+  | 'grain';
 
 export type AdjustmentState = Record<AdjustmentKey, number>;
 
@@ -20,12 +17,9 @@ export const DEFAULT_ADJUSTMENTS: AdjustmentState = {
   temperature: 0,
   tint: 0,
   grain: 0,
-  shadow: 0,
-  highlight: 0,
-  midtone: 0,
 };
 
-export const ADJUSTMENT_STEP = 0.05;
+export const ADJUSTMENT_STEP = 1;
 
 export const ADJUSTMENT_RANGES: Record<
   AdjustmentKey,
@@ -36,48 +30,33 @@ export const ADJUSTMENT_RANGES: Record<
   }
 > = {
   brightness: {
-    label: '明るさ',
-    min: -1,
-    max: 1,
+    label: '露出 (EV)',
+    min: -5,
+    max: 5,
   },
   contrast: {
     label: 'コントラスト',
-    min: -1,
-    max: 1,
+    min: -100,
+    max: 100,
   },
   saturation: {
     label: '彩度',
-    min: -1,
-    max: 1,
+    min: -100,
+    max: 100,
   },
   temperature: {
     label: '色温度',
-    min: -1,
-    max: 1,
+    min: -100,
+    max: 100,
   },
   tint: {
     label: '色かぶり',
-    min: -1,
-    max: 1,
+    min: -150,
+    max: 150,
   },
   grain: {
-    label: '粒子',
+    label: 'グレイン',
     min: 0,
-    max: 1,
-  },
-  shadow: {
-    label: 'シャドー',
-    min: 0,
-    max: 1,
-  },
-  highlight: {
-    label: 'ハイライト',
-    min: 0,
-    max: 1,
-  },
-  midtone: {
-    label: 'ミッドトーン',
-    min: 0,
-    max: 1,
+    max: 100,
   },
 };
