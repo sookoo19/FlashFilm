@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 // React Native の基本UI部品と、スタイル機能を読み込みます
 import {
+  Alert, // エラーダイアログ
   ActivityIndicator, // くるくる（読み込み中表示）
   Image, // 画像表示
   Pressable, // 押せる部品（ボタン向け）
@@ -31,6 +32,9 @@ import type { CapturedPhoto } from '../../types/camera';
 // 画面名と、画面に渡すパラメータの型を読み込みます
 import type { RootStackParamList } from '../../types/navigation.ts';
 
+// 開発時に使う既定画像を取得する関数です
+import { getDevDefaultCapturedPhoto } from '../../services/camera/devDefaultPhoto';
+
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 // この画面（Camera）からのナビゲーション型を作ります（型安全にするため）
@@ -42,10 +46,10 @@ type CameraScreenNavigationProp = NativeStackNavigationProp<
 // フラッシュの固定設定を作ります（この例では常にON）
 const FLASH_MODE: FlashMode = FlashMode.on;
 const MIN_ZOOM = 0; // expo-camera の最小ズーム。端末の広角がここにマップされる
-const MAX_ZOOM = 0.55; // 過度なデジタルズームを抑えるため上限を絞る
+const MAX_ZOOM = 0.1; // 過度なデジタルズームを抑えるため上限を絞る
 const clampZoom = (value: number) =>
   Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
-const PINCH_ZOOM_SENSITIVITY = 0.2; // ピンチの効きを抑えめに
+const PINCH_ZOOM_SENSITIVITY = 0.05; // ピンチの効きを抑えめに
 
 // ここが「カメラ画面」コンポーネント本体です
 const CameraScreen = () => {
@@ -63,6 +67,10 @@ const CameraScreen = () => {
 
   // 撮った写真のプレビュー用データを持つ状態です（nullならまだ撮っていない）
   const [preview, setPreview] = useState<CameraCapturedPicture | null>(null);
+
+  // 開発用の既定画像を読み込み中かどうかです
+  const [isLoadingDevDefaultPhoto, setIsLoadingDevDefaultPhoto] =
+    useState(false);
 
   // CameraView への参照（ref）を持ちます（takePictureAsyncを呼ぶため）
   const cameraRef = useRef<Camera | null>(null);
@@ -88,6 +96,37 @@ const CameraScreen = () => {
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
+
+  // 開発用の既定画像で編集画面へ進む処理です
+  const handleUseDevDefaultPhoto = async () => {
+    // 二重押下を防ぎます
+    if (isLoadingDevDefaultPhoto) {
+      return;
+    }
+
+    try {
+      // 読み込み中にします
+      setIsLoadingDevDefaultPhoto(true);
+
+      // 開発用画像を撮影結果と同じ型で取得します
+      const photo = await getDevDefaultCapturedPhoto();
+
+      // 画像編集画面へ遷移します
+      navigation.navigate('ImageProcessing', { photo });
+    } catch (error) {
+      // 失敗時はログを残します
+      console.error('Failed to prepare default development photo', error);
+
+      // ユーザーへ再試行を促します
+      Alert.alert(
+        'Default photo unavailable',
+        'Failed to load the development default image. Please try again.'
+      );
+    } finally {
+      // 読み込み中フラグを戻します
+      setIsLoadingDevDefaultPhoto(false);
+    }
+  };
 
   // permission がまだ取得できていない時は、読み込み中表示にします
   if (!permission) {
@@ -115,6 +154,24 @@ const CameraScreen = () => {
           {/* ボタンの文字 */}
           <Text style={styles.permissionButtonText}>Grant permission</Text>
         </Pressable>
+
+        {/* 開発時だけ、既定画像で編集画面へ進める導線を表示します */}
+        {__DEV__ && (
+          <Pressable
+            style={[
+              styles.permissionDevButton,
+              isLoadingDevDefaultPhoto && styles.permissionButtonDisabled,
+            ]}
+            onPress={handleUseDevDefaultPhoto}
+            disabled={isLoadingDevDefaultPhoto}
+          >
+            <Text style={styles.permissionDevButtonText}>
+              {isLoadingDevDefaultPhoto
+                ? 'Loading default photo...'
+                : 'Use default photo (Dev only)'}
+            </Text>
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -360,6 +417,29 @@ const styles = StyleSheet.create({
     color: '#111', // 文字色
     fontSize: 14, // 文字サイズ
     fontWeight: '600', // 太さ
+  },
+
+  // 開発時導線ボタンの見た目です
+  permissionDevButton: {
+    marginTop: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#1f1f1f',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#3a3a3a',
+  },
+
+  // 開発時導線ボタンの文字です
+  permissionDevButtonText: {
+    color: '#f0f0f0',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // ボタン無効時の見た目です
+  permissionButtonDisabled: {
+    opacity: 0.6,
   },
 
   // プレビュー画面の全体見た目です
