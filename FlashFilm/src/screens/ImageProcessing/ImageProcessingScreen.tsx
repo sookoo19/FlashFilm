@@ -12,6 +12,8 @@ import {
   useEffect,
   // 計算結果をメモして、不要な再計算を減らすために使います
   useMemo,
+  // 参照値を保持して再レンダーせずに読み書きするために使います
+  useRef,
   // 画面の状態を保存するために使います
   useState,
   // コンポーネントの型を表すための型です
@@ -26,14 +28,20 @@ import {
   Alert,
   // 画像を表示するために使います
   Image,
+  // 端末OSの判定に使います
+  Platform,
   // ボタンのように押せるUI部品です
   Pressable,
+  // スクロール可能なコンテナです
+  ScrollView,
   // スタイルを書くために使います
   StyleSheet,
   // 文字を表示するために使います
   Text,
   // ネイティブの ViewManager 登録状況を確認するために使います
   UIManager,
+  // 画面サイズを取得するために使います
+  useWindowDimensions,
   // フィルターコンポーネントへ渡す style 型です
   type StyleProp,
   // フィルターコンポーネントへ渡す style 型です
@@ -115,14 +123,32 @@ type ColorMatrixFilterProps = BaseFilterProps & {
   matrix: number[];
 };
 
+// iOS の `PhotoGrain` 用 props 型です
+type IosPhotoGrainFilterProps = {
+  // 加工したい元画像です
+  inputImage: ReactElement;
+  // 粒状感の強さです（0-1）
+  inputAmount?: number;
+  // 粒状感の粒度を調整する値です
+  inputISO?: number;
+  // 粒状感の乱数シードです
+  inputSeed?: number;
+  // フィルター描画領域のスタイルです
+  style?: StyleProp<ViewStyle>;
+  // true の時、加工後画像を一時ファイルとして取り出せます
+  extractImageEnabled?: boolean;
+  // 画像の取り出し完了時に呼ばれる関数です
+  onExtractImage?: (event: FilterExtractEvent) => void;
+  // フィルター処理でエラーになった時に呼ばれる関数です
+  onFilteringError?: (event: FilterErrorEvent) => void;
+};
+
 // `react-native-image-filter-kit` を動的読み込みするための型です
 type ImageFilterKitModule = {
-  // プリセットフィルター `Aden`
-  Aden: ComponentType<BaseFilterProps>;
-  // プリセットフィルター `Clarendon`
-  Clarendon: ComponentType<BaseFilterProps>;
   // 色行列を使って明るさなどを一括調整するコンポーネント
   ColorMatrix: ComponentType<ColorMatrixFilterProps>;
+  // iOS の写真向けグレインフィルターです
+  IosCIPhotoGrain?: ComponentType<IosPhotoGrainFilterProps>;
   // 明るさの変換行列を作る関数
   brightness: (amount?: number) => number[];
   // コントラストの変換行列を作る関数
@@ -145,23 +171,28 @@ const adjustmentKeys: readonly AdjustmentKey[] = [
   'temperature',
   // 色かぶり
   'tint',
-  // 粒子
+  // 粒状感
   'grain',
-  // シャドー
-  'shadow',
-  // ハイライト
-  'highlight',
-  // ミッドトーン
-  'midtone',
 ];
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+const EXTRACT_DEBOUNCE_MS = 3000;
 
 const toTemperatureTintMatrix = (
   temperature: number,
   tint: number
 ): number[] => {
-  const redScale = Math.max(0, 1 + temperature * 0.12 + tint * 0.06);
-  const greenScale = Math.max(0, 1 - Math.abs(tint) * 0.04);
-  const blueScale = Math.max(0, 1 - temperature * 0.12 - tint * 0.06);
+  const tempFactor = clamp(temperature, -100, 100) / 100;
+  const tintFactor = clamp(tint, -150, 150) / 150;
+
+  const redScale = Math.max(0.1, 1 + tempFactor * 0.9 + tintFactor * 0.25);
+  const greenScale = Math.max(
+    0.1,
+    1 - Math.abs(tintFactor) * 0.45 + tempFactor * 0.05
+  );
+  const blueScale = Math.max(0.1, 1 - tempFactor * 0.9 - tintFactor * 0.25);
 
   return [
     redScale,
@@ -177,41 +208,6 @@ const toTemperatureTintMatrix = (
     0,
     0,
     blueScale,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-  ];
-};
-
-const toToneBalanceMatrix = (
-  shadow: number,
-  highlight: number,
-  midtone: number,
-  grain: number
-): number[] => {
-  const redScale = Math.max(0, 1 + highlight * 0.1 - shadow * 0.05);
-  const greenScale = Math.max(0, 1 + midtone * 0.04 - grain * 0.03);
-  const blueScale = Math.max(0, 1 + shadow * 0.12 - highlight * 0.04);
-  const contrastLike = Math.max(0.85, 1 + grain * 0.06 + midtone * 0.03);
-
-  return [
-    redScale * contrastLike,
-    0,
-    0,
-    0,
-    0,
-    0,
-    greenScale * contrastLike,
-    0,
-    0,
-    0,
-    0,
-    0,
-    blueScale * contrastLike,
     0,
     0,
     0,
@@ -289,8 +285,23 @@ const ImageProcessingScreen = ({
   // 今まさに編集画像を生成中かどうかの state です
   const [isExtracting, setIsExtracting] = useState(false);
 
+  // 変更停止待ち（デバウンス）中かどうかです
+  const [isDebouncingExtract, setIsDebouncingExtract] = useState(false);
+  // 抽出リクエストの通し番号です（最新だけを有効にします）
+  const extractRequestIdRef = useRef(0);
+  // 進行中の抽出リクエストIDです
+  const activeExtractRequestIdRef = useRef<number | null>(null);
+
   // フィルター機能が使えるかどうかです
   const canUseFilter = imageFilterKit !== null;
+
+  // grain フィルターが使えるかどうかです（iOS限定）
+  const canUseGrain =
+    Platform.OS === 'ios' && imageFilterKit?.IosCIPhotoGrain != null;
+
+  // 画面高さの40%を編集パネルに割り当てます
+  const { height: windowHeight } = useWindowDimensions();
+  const editorPanelHeight = windowHeight * 0.4;
 
   // 調整値が初期値から変わっているかを調べます
   const hasAdjustmentChanged = useMemo(
@@ -306,22 +317,57 @@ const ImageProcessingScreen = ({
     // 調整値が変わっている時だけ true
     hasAdjustmentChanged;
 
+  // grain を適用する必要があるか判定します
+  const shouldApplyGrain = adjustments.grain !== DEFAULT_ADJUSTMENTS.grain;
+
+  // いまの調整セットを抽出可能かどうかです
+  const canExtractRequestedEffect =
+    shouldApplyEffect && canUseFilter && (!shouldApplyGrain || canUseGrain);
+
+  const hasActiveExtraction = activeExtractRequestIdRef.current !== null;
+
+  // 画像抽出を実行してよいタイミングかどうかです
+  const shouldExtractImage =
+    canExtractRequestedEffect && hasActiveExtraction && !isDebouncingExtract;
+
   // フィルター条件が変わった時に、抽出状態を更新します
   useEffect(() => {
     // 効果を適用しないなら、抽出状態をリセットします
-    if (!shouldApplyEffect) {
+    if (!canExtractRequestedEffect) {
+      // デバウンス待ちを解除
+      setIsDebouncingExtract(false);
       // 処理中ではない
+      activeExtractRequestIdRef.current = null;
       setIsExtracting(false);
       // 抽出済み画像も不要なので消す
       setFilteredUri(null);
       return;
     }
 
-    // 効果を適用するなら、新しい編集画像をこれから作る状態にします
-    setIsExtracting(true);
+    // リクエストIDを採番して最新を覚えます
+    const nextRequestId = extractRequestIdRef.current + 1;
+    extractRequestIdRef.current = nextRequestId;
+
+    // 効果を適用する場合、まずはデバウンス待ちにします
+    setIsDebouncingExtract(true);
+    // 進行中フラグは一度下げます
+    activeExtractRequestIdRef.current = null;
+    setIsExtracting(false);
     // 以前の抽出結果は古いので消します
     setFilteredUri(null);
-  }, [adjustments, shouldApplyEffect]);
+
+    const timeoutId = globalThis.setTimeout(() => {
+      // デバウンス終了と同時にこのリクエストを有効化します
+      activeExtractRequestIdRef.current = nextRequestId;
+      // 3秒間変更が無ければ抽出を開始します
+      setIsDebouncingExtract(false);
+      setIsExtracting(true);
+    }, EXTRACT_DEBOUNCE_MS);
+
+    return () => {
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [adjustments, canExtractRequestedEffect]);
 
   // 「撮り直し」ボタンを押した時の処理です
   const handleRetake = () => {
@@ -331,6 +377,14 @@ const ImageProcessingScreen = ({
 
   // 加工後画像の抽出が終わった時の処理です
   const handleExtracted = useCallback((event: FilterExtractEvent) => {
+    const activeRequestId = activeExtractRequestIdRef.current;
+    const latestRequestId = extractRequestIdRef.current;
+
+    // 最新の抽出セッションでなければ無視します
+    if (activeRequestId === null || activeRequestId !== latestRequestId) {
+      return;
+    }
+
     // イベントから URI とエラーを取り出します
     const { uri, error } = event.nativeEvent;
 
@@ -339,6 +393,7 @@ const ImageProcessingScreen = ({
       // 開発者向けにログを出します
       console.warn('Filter extract error', error);
       // 処理中フラグを下げます
+      activeExtractRequestIdRef.current = null;
       setIsExtracting(false);
       // ここで終了します
       return;
@@ -349,12 +404,21 @@ const ImageProcessingScreen = ({
       // 保存用に加工後画像URIを覚えます
       setFilteredUri(uri);
       // 処理中フラグを下げます
+      activeExtractRequestIdRef.current = null;
       setIsExtracting(false);
     }
   }, []);
 
   // フィルター描画側のエラーを受け取る処理です
   const handleFilteringError = useCallback((event: FilterErrorEvent) => {
+    const activeRequestId = activeExtractRequestIdRef.current;
+    const latestRequestId = extractRequestIdRef.current;
+
+    // 最新の抽出セッションでなければ無視します
+    if (activeRequestId === null || activeRequestId !== latestRequestId) {
+      return;
+    }
+
     // ネイティブ側のエラーメッセージを取り出します
     const message = event.nativeEvent.message ?? 'Unknown filter error';
 
@@ -362,6 +426,7 @@ const ImageProcessingScreen = ({
     console.warn('Filter rendering error', message);
 
     // 抽出待ち状態を解除します
+    activeExtractRequestIdRef.current = null;
     setIsExtracting(false);
   }, []);
 
@@ -382,6 +447,27 @@ const ImageProcessingScreen = ({
     }));
   };
 
+  // フィルターを確実に更新するためのキーです
+  const filterRenderKey = useMemo(
+    () =>
+      [
+        adjustments.brightness,
+        adjustments.contrast,
+        adjustments.saturation,
+        adjustments.temperature,
+        adjustments.tint,
+        adjustments.grain,
+      ].join(':'),
+    [
+      adjustments.brightness,
+      adjustments.contrast,
+      adjustments.saturation,
+      adjustments.temperature,
+      adjustments.tint,
+      adjustments.grain,
+    ]
+  );
+
   // 画面に表示するプレビュー画像を組み立てます
   const previewContent = useMemo(() => {
     // まず元画像を作ります
@@ -397,6 +483,7 @@ const ImageProcessingScreen = ({
     // 動的に読み込んだライブラリから必要な機能を取り出します
     const {
       ColorMatrix,
+      IosCIPhotoGrain,
       brightness: toBrightnessMatrix,
       contrast: toContrastMatrix,
       saturate: toSaturateMatrix,
@@ -404,34 +491,59 @@ const ImageProcessingScreen = ({
     } = imageFilterKit;
 
     // 明るさ・コントラスト・彩度の行列を1つにまとめます
+    const exposureStops = clamp(adjustments.brightness, -5, 5);
+    const brightnessScale = Math.pow(2, exposureStops);
+    const contrastScale = Math.max(0.05, 1 + adjustments.contrast / 100);
+    const saturationScale = Math.max(0, 1 + adjustments.saturation / 100);
+
     const adjustmentMatrix = concatColorMatrices([
-      toBrightnessMatrix(adjustments.brightness + 1),
-      toContrastMatrix(adjustments.contrast + 1),
-      toSaturateMatrix(adjustments.saturation + 1),
+      toBrightnessMatrix(brightnessScale),
+      toContrastMatrix(contrastScale),
+      toSaturateMatrix(saturationScale),
       toTemperatureTintMatrix(adjustments.temperature, adjustments.tint),
-      toToneBalanceMatrix(
-        adjustments.shadow,
-        adjustments.highlight,
-        adjustments.midtone,
-        adjustments.grain
-      ),
     ]);
 
-    // プリセット後の画像にさらに色調整をかけます
-    return (
+    const shouldExtractFromColorMatrix =
+      shouldExtractImage && (!shouldApplyGrain || !canUseGrain);
+
+    // 基本調整は ColorMatrix で適用します
+    const colorAdjustedImage = (
       <ColorMatrix
+        key={`color-${filterRenderKey}`}
         // 合成した色変換行列を渡します
         matrix={adjustmentMatrix}
         // フィルター描画領域のサイズを維持します
         style={styles.preview}
         // 編集後画像を一時ファイルとして取り出せるようにします
-        extractImageEnabled
+        extractImageEnabled={shouldExtractFromColorMatrix}
         // フィルター描画エラー時の処理です
         onFilteringError={handleFilteringError}
         // 取り出し完了時に呼ぶ関数です
-        onExtractImage={handleExtracted}
+        onExtractImage={
+          shouldExtractFromColorMatrix ? handleExtracted : undefined
+        }
         // 実際に加工する画像です
         image={baseImage}
+      />
+    );
+
+    // grain を使わない、または使えない場合は ColorMatrix 結果を返します
+    if (!shouldApplyGrain || !canUseGrain || !IosCIPhotoGrain) {
+      return colorAdjustedImage;
+    }
+
+    const grainAmount = clamp(adjustments.grain, 0, 100) / 100;
+
+    // grain は最終段で適用して、その結果を抽出します
+    return (
+      <IosCIPhotoGrain
+        key={`grain-${filterRenderKey}`}
+        style={styles.preview}
+        inputImage={colorAdjustedImage}
+        inputAmount={grainAmount}
+        extractImageEnabled={shouldExtractImage}
+        onFilteringError={handleFilteringError}
+        onExtractImage={shouldExtractImage ? handleExtracted : undefined}
       />
     );
   }, [
@@ -445,14 +557,14 @@ const ImageProcessingScreen = ({
     adjustments.temperature,
     // 色かぶりが変わったら再計算
     adjustments.tint,
-    // 粒子が変わったら再計算
+    // grain が変わったら再計算
     adjustments.grain,
-    // シャドーが変わったら再計算
-    adjustments.shadow,
-    // ハイライトが変わったら再計算
-    adjustments.highlight,
-    // ミッドトーンが変わったら再計算
-    adjustments.midtone,
+    // フィルターを再初期化するキーです
+    filterRenderKey,
+    // grain 機能可否が変わったら再計算
+    canUseGrain,
+    // 抽出実行可否が変わったら再計算
+    shouldExtractImage,
     // 抽出完了処理が変わったら再計算
     handleExtracted,
     // 描画エラー処理が変わったら再計算
@@ -461,6 +573,8 @@ const ImageProcessingScreen = ({
     photo.uri,
     // フィルター適用有無が変わったら再計算
     shouldApplyEffect,
+    // grain 適用判定が変わったら再計算
+    shouldApplyGrain,
   ]);
 
   // 「保存して進む」ボタンの処理です
@@ -482,6 +596,14 @@ const ImageProcessingScreen = ({
         return;
       }
 
+      if (shouldApplyGrain && !canUseGrain) {
+        Alert.alert(
+          '保存できません',
+          'この端末では grain を生成できないため、grain を 0 にして保存してください。'
+        );
+        return;
+      }
+
       // 編集画像が必要なのに、まだ生成できていない場合は止めます
       if (shouldApplyEffect && (isExtracting || !filteredUri)) {
         Alert.alert('処理中です', '編集が完了してから保存してください。');
@@ -493,12 +615,9 @@ const ImageProcessingScreen = ({
         brightness: adjustments.brightness,
         contrast: adjustments.contrast,
         saturation: adjustments.saturation,
-        temperature: Math.round(adjustments.temperature * 1000),
-        tint: Math.round(adjustments.tint * 100),
+        temperature: adjustments.temperature,
+        tint: adjustments.tint,
         grain: adjustments.grain,
-        shadowStrength: adjustments.shadow,
-        highlightStrength: adjustments.highlight,
-        midtoneStrength: adjustments.midtone,
       };
 
       const targetUri = shouldApplyEffect ? filteredUri! : photo.uri;
@@ -536,10 +655,24 @@ const ImageProcessingScreen = ({
       {/* 上側の画像プレビューエリアです */}
       <View style={styles.previewHolder}>{previewContent}</View>
 
-      <View style={styles.editorPanel}>
+      <View style={[styles.editorPanel, { height: editorPanelHeight }]}>
+        {/* 編集画像をまだ生成中の時に表示するメッセージです */}
+        {canExtractRequestedEffect && (isDebouncingExtract || isExtracting) && (
+          <Text style={styles.filterNote}>
+            {isDebouncingExtract
+              ? '変更停止から3秒後に編集画像を生成します…'
+              : '編集画像を生成しています…'}
+          </Text>
+        )}
+
         <Text style={styles.sectionTitle}>編集</Text>
 
-        <View style={styles.adjustmentArea}>
+        <ScrollView
+          style={styles.adjustmentList}
+          contentContainerStyle={styles.adjustmentListContent}
+          showsVerticalScrollIndicator
+          nestedScrollEnabled
+        >
           {adjustmentKeys.map(key => {
             const range = ADJUSTMENT_RANGES[key];
 
@@ -556,7 +689,7 @@ const ImageProcessingScreen = ({
               />
             );
           })}
-        </View>
+        </ScrollView>
       </View>
 
       {!canUseFilter && (
@@ -566,9 +699,11 @@ const ImageProcessingScreen = ({
         </Text>
       )}
 
-      {/* 編集画像をまだ生成中の時に表示するメッセージです */}
-      {shouldApplyEffect && (isExtracting || !filteredUri) && (
-        <Text style={styles.filterNote}>編集画像を生成しています…</Text>
+      {canUseFilter && shouldApplyGrain && !canUseGrain && (
+        <Text style={styles.filterUnavailableNote}>
+          この端末では grain を生成できないため、grain を 0
+          にすると保存できます。
+        </Text>
       )}
 
       {/* 下側のボタンエリアです */}
@@ -666,9 +801,17 @@ const styles = StyleSheet.create({
   },
 
   // 編集スライダー群の上余白です
-  adjustmentArea: {
+  adjustmentList: {
     // 上に少し余白を入れます
     marginTop: 14,
+    // パネル内の残り高さを使います
+    flex: 1,
+    // Android で ScrollView が縮めない問題を防ぎます
+    minHeight: 0,
+  },
+  adjustmentListContent: {
+    // 下側にも少し余白を入れます
+    paddingBottom: 16,
   },
 
   // 「生成中です…」の説明文です
