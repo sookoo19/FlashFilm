@@ -8,7 +8,7 @@ const uniqueUris = (uris: string[]) => {
 };
 
 // 写真ライブラリへのアクセス権限を確認し、必要ならリクエストする関数です。
-export const requestMediaLibraryPermission = async (): Promise<boolean> => {
+export const ensureMediaLibraryPermission = async (): Promise<boolean> => {
   // 現在の権限状態を取得します。
   const current = await MediaLibrary.getPermissionsAsync();
   // すでに許可されているなら true を返します。
@@ -24,7 +24,7 @@ export const requestMediaLibraryPermission = async (): Promise<boolean> => {
 };
 
 // 複数の画像 URI をメディアライブラリへ保存し、保存した件数を返す関数です。
-export const saveImageUrisToLibrary = async (
+export const saveImagesToMediaLibrary = async (
   // 保存したい画像 URI の配列です。
   uris: string[]
 ): Promise<number> => {
