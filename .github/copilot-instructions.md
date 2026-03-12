@@ -1,11 +1,5 @@
 # FlashFilm AI コーディングガイド
 
-## 概要 / アーキテクチャ
-
-- Expo + React Native + TypeScript の単一アプリ構成。エントリは `FlashFilm/index.ts`、アプリ全体のナビゲーション定義は `FlashFilm/App.tsx`。
-- 画面遷移は React Navigation の Native Stack を使用し、現在の主要画面は `Camera` と `ImageProcessing` の 2 つ。
-- 主要な実装は `FlashFilm/src/` 配下にあり、`screens/`, `components/`, `services/`, `types/`, `constants/` へ役割別に整理されている。
-
 ## 出力ガイド/ 学習重視の対話方針
 
 - このリポジトリでは、ユーザーは写経しながら学習して開発を進める。Copilot は原則としてコードを直接実装・編集せず、学習を支援する説明役として振る舞う。
@@ -17,6 +11,12 @@
 - 一度に全体をまとめて実装するのではなく、1 箇所ずつ段階的に進める。複数ファイルにまたがる場合も同様に、変更単位ごとに区切って説明する。
 - ユーザーが明示的に「実装して」と依頼しない限り、ファイル編集・コード生成の適用・自動修正は行わない。
 - コードを提示する際は、既存構造にどう接続されるか、関連する型や定数、呼び出し元まで含めて説明し、ユーザーが手で写経できる粒度に分ける。
+
+## 概要 / アーキテクチャ
+
+- Expo + React Native + TypeScript の単一アプリ構成。エントリは `FlashFilm/index.ts`、アプリ全体のナビゲーション定義は `FlashFilm/App.tsx`。
+- 画面遷移は React Navigation の Native Stack を使用し、現在の主要画面は `Camera` と `ImageProcessing` の 2 つ。
+- 主要な実装は `FlashFilm/src/` 配下にあり、`screens/`, `components/`, `services/`, `types/`, `constants/` へ役割別に整理されている。
 
 ## 現在の主要機能
 
