@@ -627,14 +627,9 @@ const ImageProcessingScreen = ({
         recipe,
       });
 
-      const savedMessage =
-        saved.storageMode === 'collector'
-          ? `recipe.json と target.jpg を保存しました。\n保存先: ${saved.sampleId}`
-          : `開発用保存サーバーへ接続できなかったため、アプリ内ストレージへ保存しました。\n保存先: ${saved.targetPath}`;
-
       Alert.alert(
         '保存しました',
-        savedMessage
+        `recipe.json と target.jpg を保存しました。\n保存先: ${saved.sampleId}`
       );
 
       // 保存できたら先頭画面まで戻ります
