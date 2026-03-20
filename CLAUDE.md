@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Design System
+
+UI生成時は `melta-ui/CLAUDE.md` を参照すること。melta UI デザインシステム（Tailwind CSS ベース、28コンポーネント）が定義されている。
+
+- クイックリファレンス: `melta-ui/CLAUDE.md`
+- 禁止パターン: `melta-ui/foundations/prohibited.md`
+- デザインレビュースキル: `melta-ui/skills/design-review/SKILL.md`
+
 ## Project Overview
 
 **FlashFilm** is a React Native + Expo (TypeScript) camera app. The core concept: photos are taken with flash locked ON, then the user manually adjusts film-style parameters (exposure, contrast, saturation, temperature, tint, grain). The adjusted image + recipe JSON are saved as a dataset sample for future AI model training.
@@ -73,3 +81,28 @@ Each save produces a sample with ID `sample-<ISO timestamp>-<random>`:
 ### Branch Strategy
 
 `main` → production, `develop` → integration, feature branches: `feature/camera-screen`, `feature/image-processing`, `feature/ai-integration`, `feature/storage-sharing`.
+
+## Design Context
+
+> 詳細は `.impeccable.md` を参照。このセクションは `/impeccable:teach-impeccable` によって生成。
+
+### Users
+- **対象**: クリエイター全般（写真愛好家、ビジュアルアーティスト、実験好きなエンジニア・デザイナー）
+- **ジョブ**: フィルム風写真を自分のスタイルで仕上げ、そのレシピをAIに学習させる
+
+### Brand Personality
+- **3語**: 実験・探求・発見（Experiment · Explore · Discover）
+- **ムード**: インスタントカメラのノスタルジー × AI研究の精緻さ
+
+### Aesthetic Direction
+- **テーマ**: ダークモードのみ（純黒ベース、フィルムグレイン質感）
+- **カラーパレット**: 背景 `#000` / サーフェス `#0f0f0f` / ボーダー `#222`〜`#3a3a3a` / テキスト `#f0f0f0`
+- **参考**: Lomography App、VSCO、Darkroom
+- **アンチ**: 白背景カメラアプリ、ネオンカラー、過剰アニメーション
+
+### Design Principles
+1. **Dark Canvas First** — 画像が主役。UIは暗い黒子として写真の色と光を際立たせる
+2. **Analog Soul, Digital Precision** — フィルムの質感を保ちながら、数値は正確に表示する
+3. **Intentional Constraints** — 制約がクリエイティビティを生む。UIでも意図的な制限を恐れない
+4. **Experiment Mindset** — 試行錯誤を歓迎するUI。変更の差分を明示し、探索しやすくする
+5. **Quiet but Expressive** — 装飾より余白と質感。静かに、でも確かに個性が滲み出る
