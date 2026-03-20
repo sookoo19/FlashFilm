@@ -10,9 +10,10 @@ import {
 } from '@shopify/react-native-skia';
 import * as FileSystem from 'expo-file-system';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +21,8 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 import AdjustmentSlider from '../../components/AdjustmentSlider';
 import {
@@ -79,14 +82,55 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
   const [adjustments, setAdjustments] =
     useState<AdjustmentState>(DEFAULT_ADJUSTMENTS);
 
+  // Editor panel entrance: slides up + fades in on mount
+  // useState initializer keeps Animated.Value stable without .current in render
+  const [panelTranslateY] = useState(() => new Animated.Value(24));
+  const [panelOpacity] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(panelOpacity, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.spring(panelTranslateY, {
+        toValue: 0,
+        speed: 14,
+        bounciness: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Save/Retake button press scale
+  const [saveScale] = useState(() => new Animated.Value(1));
+  const [retakeScale] = useState(() => new Animated.Value(1));
+
+  const btnPressIn = (anim: Animated.Value) =>
+    Animated.spring(anim, {
+      toValue: 0.96,
+      speed: 60,
+      bounciness: 0,
+      useNativeDriver: true,
+    }).start();
+
+  const btnPressOut = (anim: Animated.Value) =>
+    Animated.spring(anim, {
+      toValue: 1,
+      speed: 20,
+      bounciness: 4,
+      useNativeDriver: true,
+    }).start();
+
   // Skia がネイティブで画像を読み込む
   // file:// URI に対応している（expo-camera の出力 URI をそのまま渡せる）
   const skImage = useImage(photo.uri);
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  // プレビュー領域は画面の 60% の高さ（編集パネルに残り 40% を確保）
-  const previewHeight = windowHeight * 0.6;
+  // プレビュー領域: ボタン・注釈エリアを除いた残りの 60%
+  const BOTTOM_CONTROLS_HEIGHT = 120;
+  const previewHeight = (windowHeight - BOTTOM_CONTROLS_HEIGHT) * 0.6;
 
   // 元画像のアスペクト比を維持してプレビューサイズを決める
   const { previewWidth, previewTop, previewLeft } = useMemo(() => {
@@ -208,7 +252,7 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     }
   };
 
-  const editorPanelHeight = windowHeight * 0.4;
+  const editorPanelHeight = (windowHeight - BOTTOM_CONTROLS_HEIGHT) * 0.4;
 
   return (
     <View style={styles.container}>
@@ -246,8 +290,17 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
         </Canvas>
       </View>
 
-      {/* 編集パネル */}
-      <View style={[styles.editorPanel, { height: editorPanelHeight }]}>
+      {/* 編集パネル — slides up + fades in on mount */}
+      <Animated.View
+        style={[
+          styles.editorPanel,
+          { height: editorPanelHeight },
+          {
+            opacity: panelOpacity,
+            transform: [{ translateY: panelTranslateY }],
+          },
+        ]}
+      >
         <Text style={styles.sectionTitle}>編集</Text>
 
         <ScrollView
@@ -272,27 +325,39 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
             );
           })}
         </ScrollView>
-      </View>
+      </Animated.View>
 
       {/* アクションボタン */}
       <View style={styles.actions}>
-        <Pressable
-          style={[styles.secondaryButton, isSaving && styles.buttonDisabled]}
+        <AnimatedPressable
+          style={[
+            styles.secondaryButton,
+            isSaving && styles.buttonDisabled,
+            { transform: [{ scale: retakeScale }] },
+          ]}
           onPress={handleRetake}
+          onPressIn={() => btnPressIn(retakeScale)}
+          onPressOut={() => btnPressOut(retakeScale)}
           disabled={isSaving}
         >
           <Text style={styles.secondaryText}>Retake</Text>
-        </Pressable>
+        </AnimatedPressable>
 
-        <Pressable
-          style={[styles.primaryButton, isSaving && styles.buttonDisabled]}
+        <AnimatedPressable
+          style={[
+            styles.primaryButton,
+            isSaving && styles.buttonDisabled,
+            { transform: [{ scale: saveScale }] },
+          ]}
           onPress={handleConfirm}
+          onPressIn={() => !isSaving && btnPressIn(saveScale)}
+          onPressOut={() => btnPressOut(saveScale)}
           disabled={isSaving}
         >
           <Text style={styles.primaryText}>
             {isSaving ? 'Saving...' : 'Save'}
           </Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
 
       <Text style={styles.placeholderNote}>
@@ -319,17 +384,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#222',
     paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   sectionTitle: {
     color: '#f0f0f0',
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '600',
     letterSpacing: 0.2,
   },
   adjustmentList: {
-    marginTop: 14,
+    marginTop: 16,
     flex: 1,
     minHeight: 0,
   },
@@ -349,33 +414,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f0f0f0',
     borderRadius: 10,
-    paddingVertical: 14,
+    height: 48,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryText: {
     color: '#111',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
   },
   secondaryButton: {
     flex: 1,
     backgroundColor: '#1f1f1f',
     borderRadius: 10,
-    paddingVertical: 14,
+    height: 48,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#3a3a3a',
   },
   secondaryText: {
     color: '#f0f0f0',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
   },
   placeholderNote: {
-    color: '#999',
+    color: '#888888',
     paddingHorizontal: 24,
-    paddingBottom: 20,
-    fontSize: 12,
+    paddingBottom: 16,
+    fontSize: 13,
     letterSpacing: 0.2,
   },
   buttonDisabled: {

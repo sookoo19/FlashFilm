@@ -5,12 +5,14 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Alert, // エラーダイアログ
   ActivityIndicator, // くるくる（読み込み中表示）
-  Image, // 画像表示
+  Animated, // アニメーション
   Pressable, // 押せる部品（ボタン向け）
   StyleSheet, // スタイルをまとめて定義
   Text, // 文字表示
   View, // レイアウト用の箱
 } from 'react-native';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Expo Camera のカメラ表示と、型（TypeScript）と、権限フックを読み込みます
 import {
@@ -80,6 +82,37 @@ const CameraScreen = () => {
   const [zoom, setZoom] = useState<number>(0);
   const zoomRef = useRef<number>(0);
   const pinchStartZoom = useRef<number>(0);
+
+  // ---- アニメーション ----
+  // useState initializer でレンダー中に .current を触らないようにする
+  // キャプチャボタンのスケールフィードバック
+  const [captureScale] = useState(() => new Animated.Value(1));
+  // 撮影時のフラッシュオーバーレイ（カメラフラッシュを模倣）
+  const [flashOpacity] = useState(() => new Animated.Value(0));
+  // プレビュー画像のフェードイン（インスタント写真が現像される感覚）
+  const [previewAnim] = useState(() => new Animated.Value(0));
+
+  // フラッシュをトリガーする: 白い閃光 → すぐに消える
+  const triggerFlash = () => {
+    flashOpacity.setValue(0.9);
+    Animated.timing(flashOpacity, {
+      toValue: 0,
+      duration: 280,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  // プレビューが表示されたらフェードイン
+  useEffect(() => {
+    if (preview) {
+      previewAnim.setValue(0);
+      Animated.timing(previewAnim, {
+        toValue: 1,
+        duration: 380,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [preview, previewAnim]);
 
   // 画面が表示された後や、permissionが変わった時に実行する処理です
   useEffect(() => {
@@ -193,6 +226,9 @@ const CameraScreen = () => {
         base64: true,
       });
 
+      // 撮影成功 → フラッシュ演出（実際のカメラフラッシュを模倣）
+      triggerFlash();
+
       // 撮影した写真をプレビューとして保存します（これでUIがプレビューに切り替わります）
       setPreview(photo);
     } catch (error) {
@@ -260,11 +296,16 @@ const CameraScreen = () => {
       {preview ? (
         // プレビュー表示の大枠です
         <View style={styles.previewContainer}>
-          {/* 撮った写真を全画面表示します */}
-          <Image source={{ uri: preview.uri }} style={styles.preview} />
+          {/* 撮った写真 — インスタント写真が現像されるようにフェードイン */}
+          <Animated.Image
+            source={{ uri: preview.uri }}
+            style={[styles.preview, { opacity: previewAnim }]}
+          />
 
           {/* ボタンエリアです */}
-          <View style={styles.previewActions}>
+          <Animated.View
+            style={[styles.previewActions, { opacity: previewAnim }]}
+          >
             {/* 取り直しボタン */}
             <Pressable style={styles.secondaryButton} onPress={handleRetake}>
               <Text style={styles.secondaryButtonText}>Retake</Text>
@@ -274,7 +315,7 @@ const CameraScreen = () => {
             <Pressable style={styles.primaryButton} onPress={handleUsePhoto}>
               <Text style={styles.primaryButtonText}>Use photo</Text>
             </Pressable>
-          </View>
+          </Animated.View>
         </View>
       ) : (
         // preview がないなら「カメラ画面」を表示します
@@ -294,6 +335,11 @@ const CameraScreen = () => {
                   style={styles.zoomBadgeText}
                 >{`${Math.round(zoom * 100)}%`}</Text>
               </View>
+              {/* フラッシュオーバーレイ — 撮影時に白い閃光を演出（カメラフラッシュを模倣） */}
+              <Animated.View
+                style={[styles.flashOverlay, { opacity: flashOpacity }]}
+                pointerEvents='none'
+              />
             </View>
           </GestureDetector>
 
@@ -309,14 +355,32 @@ const CameraScreen = () => {
             {/* フラッシュ状態の説明文です */}
             <Text style={styles.flashText}>Flash locked ON</Text>
 
-            {/* 撮影ボタン（押せる部品） */}
-            <Pressable
+            {/* 撮影ボタン — スケールフィードバックでシャッターを押す感触を再現 */}
+            <AnimatedPressable
               style={[
-                styles.captureButton, // 通常のボタンスタイル
-                !isReady && styles.captureButtonDisabled, // 準備中は薄くする
+                styles.captureButton,
+                !isReady && styles.captureButtonDisabled,
+                { transform: [{ scale: captureScale }] },
               ]}
-              onPress={handleTakePicture} // 押したら撮影する
-              disabled={!isReady || isCapturing} // 準備中や撮影中は押せない
+              onPress={handleTakePicture}
+              onPressIn={() => {
+                if (!isReady || isCapturing) return;
+                Animated.spring(captureScale, {
+                  toValue: 0.92,
+                  speed: 60,
+                  bounciness: 0,
+                  useNativeDriver: true,
+                }).start();
+              }}
+              onPressOut={() =>
+                Animated.spring(captureScale, {
+                  toValue: 1,
+                  speed: 14,
+                  bounciness: 5,
+                  useNativeDriver: true,
+                }).start()
+              }
+              disabled={!isReady || isCapturing}
             >
               {/* 撮影中はくるくる、そうでなければ文字を出します */}
               {isCapturing ? (
@@ -324,7 +388,7 @@ const CameraScreen = () => {
               ) : (
                 <Text style={styles.captureText}>Capture</Text>
               )}
-            </Pressable>
+            </AnimatedPressable>
 
             {/* 開発時は、権限状態に関係なく既定画像で進める導線を表示します */}
             {__DEV__ && (
@@ -374,22 +438,22 @@ const styles = StyleSheet.create({
 
   // フラッシュ説明文の見た目です
   flashText: {
-    color: '#fff', // 文字色を白にします
-    textAlign: 'center', // 真ん中揃え
-    marginBottom: 12, // 下に余白
-    fontSize: 14, // 文字サイズ
-    letterSpacing: 0.4, // 文字の間隔
+    color: '#cccccc',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontSize: 15,
+    letterSpacing: 0.4,
   },
 
   // 撮影ボタンの見た目です
   captureButton: {
-    alignSelf: 'center', // 横方向で中央に寄せます
-    width: 160, // ボタンの幅
-    paddingVertical: 14, // 上下の余白
-    borderRadius: 999, // 丸いボタンにします
-    backgroundColor: '#f0f0f0', // 背景色
-    alignItems: 'center', // 中の要素を横方向で中央
-    justifyContent: 'center', // 中の要素を縦方向で中央
+    alignSelf: 'center',
+    width: 160,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // 撮影できない時のボタン見た目です
@@ -416,43 +480,49 @@ const styles = StyleSheet.create({
 
   // 権限画面のタイトル文字の見た目です
   permissionTitle: {
-    color: '#fff', // 白文字
-    fontSize: 16, // 文字サイズ
-    marginBottom: 16, // 下の余白
-    textAlign: 'center', // 中央揃え
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    marginBottom: 16,
+    textAlign: 'center',
   },
 
   // 権限を許可するボタンの見た目です
   permissionButton: {
-    paddingHorizontal: 20, // 左右の余白
-    paddingVertical: 12, // 上下の余白
-    borderRadius: 8, // 角丸
-    backgroundColor: '#f0f0f0', // 背景色
+    paddingHorizontal: 24,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // 権限ボタンの文字の見た目です
   permissionButtonText: {
-    color: '#111', // 文字色
-    fontSize: 14, // 文字サイズ
-    fontWeight: '600', // 太さ
+    color: '#111',
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   // 開発時導線ボタンの見た目です
   permissionDevButton: {
     marginTop: 12,
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    height: 40,
     borderRadius: 8,
     backgroundColor: '#1f1f1f',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#3a3a3a',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // 開発時導線ボタンの文字です
   permissionDevButtonText: {
     color: '#f0f0f0',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
   },
 
   // ボタン無効時の見た目です
@@ -483,36 +553,38 @@ const styles = StyleSheet.create({
 
   // 「使う」ボタンの見た目です
   primaryButton: {
-    flex: 1, // 横幅を半分ずつ使えるようにします
-    backgroundColor: '#f0f0f0', // 背景色
-    borderRadius: 10, // 角丸
-    paddingVertical: 14, // 上下余白
-    alignItems: 'center', // 中央揃え
+    flex: 1,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // 「使う」ボタンの文字の見た目です
   primaryButtonText: {
-    color: '#111', // 文字色
-    fontSize: 15, // 文字サイズ
-    fontWeight: '700', // 太め
+    color: '#111',
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   // 「取り直し」ボタンの見た目です
   secondaryButton: {
-    flex: 1, // 横幅を半分ずつ
-    backgroundColor: '#1f1f1f', // 背景色（暗め）
-    borderRadius: 10, // 角丸
-    paddingVertical: 14, // 上下余白
-    alignItems: 'center', // 中央揃え
-    borderWidth: StyleSheet.hairlineWidth, // 枠線の太さ
-    borderColor: '#3a3a3a', // 枠線の色
+    flex: 1,
+    backgroundColor: '#1f1f1f',
+    borderRadius: 10,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#3a3a3a',
   },
 
   // 「取り直し」ボタンの文字の見た目です
   secondaryButtonText: {
-    color: '#f0f0f0', // 文字色
-    fontSize: 15, // 文字サイズ
-    fontWeight: '700', // 太め
+    color: '#f0f0f0',
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   // カメラ切り替えボタンの見た目です
@@ -520,22 +592,30 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 12,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    height: 40,
     borderRadius: 20,
     backgroundColor: '#1f1f1f',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#3a3a3a',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // 切り替えボタンの文字の見た目です
   switchText: {
     color: '#f0f0f0',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
   },
 
   cameraWrapper: {
     flex: 1,
+  },
+
+  // フラッシュオーバーレイ — 撮影時の白い閃光（ポインターイベントは無効）
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#ffffff',
   },
   zoomBadge: {
     position: 'absolute',

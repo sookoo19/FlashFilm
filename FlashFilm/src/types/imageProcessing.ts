@@ -30,7 +30,7 @@ export const ADJUSTMENT_RANGES: Record<
   }
 > = {
   brightness: {
-    label: '露出 (EV)',
+    label: '露出',
     min: -5,
     max: 5,
   },
