@@ -1,3 +1,9 @@
+import {
+  ColorGradingState,
+  ColorMixerState,
+  DEFAULT_COLOR_GRADING,
+  DEFAULT_COLOR_MIXER,
+} from './imageProcessing';
 export const FLASH_PRESET_IDS = ['flash_base'] as const;
 
 export type FlashPresetId = (typeof FLASH_PRESET_IDS)[number];
@@ -35,10 +41,12 @@ export type AiEditRecipe = {
   temperature: number;
   tint: number;
   grain: number;
+  colorGrading: ColorGradingState; // 追加
+  colorMixer: ColorMixerState;
 };
 
 export const DEFAULT_AI_EDIT_RECIPE: Readonly<AiEditRecipe> = {
-  version: 2,
+  version: 3,
   presetId: 'flash_base',
   brightness: 0,
   contrast: 0,
@@ -46,4 +54,6 @@ export const DEFAULT_AI_EDIT_RECIPE: Readonly<AiEditRecipe> = {
   temperature: 0,
   tint: 0,
   grain: 0,
+  colorGrading: DEFAULT_COLOR_GRADING, // 追加
+  colorMixer: DEFAULT_COLOR_MIXER,
 };
