@@ -7,8 +7,12 @@ const clamp = (v: number, min: number, max: number) =>
   Math.min(max, Math.max(min, v));
 
 // 4×5カラーマトリクス（20要素）の行列積
+// [row * 5 + col]は「2次元 → 1次元」に変換してるだけ
 // Skia は 0〜1 の色空間を使用。bias列（index 4,9,14,19）も 0〜1 で指定する
 const mulMatrix = (a: number[], b: number[]): number[] => {
+  if (__DEV__ && (a.length !== 20 || b.length !== 20)) {
+    throw new Error(`mulMatrix: 配列長が不正です (${a.length}, ${b.length})`);
+  }
   const out = new Array<number>(20).fill(0);
   for (let row = 0; row < 4; row++) {
     for (let col = 0; col < 4; col++) {
@@ -29,6 +33,7 @@ const mulMatrix = (a: number[], b: number[]): number[] => {
 };
 
 // 露出マトリクス: 1ユニット = 1/3 EV として RGB を乗算
+// Math.pow(2, …)は2の何乗か計算
 // （2^1 = 2倍は変化が大きすぎるため、2^(stops/3) に緩和）
 const brightnessMatrix = (stops: number): number[] => {
   const s = Math.pow(2, clamp(stops, -5, 5) / 3);
@@ -42,6 +47,7 @@ const brightnessMatrix = (stops: number): number[] => {
 };
 
 // コントラストマトリクス: 0.5 グレーを基点にスケール
+// s の下限を 0.05 にすることでスライダー最小値でも完全な黒つぶれを防ぐ
 const contrastMatrix = (amount: number): number[] => {
   const s = Math.max(0.05, 1 + amount / 100);
   const t = 0.5 * (1 - s); // Skia の 0〜1 空間での bias
@@ -57,12 +63,12 @@ const contrastMatrix = (amount: number): number[] => {
 // 彩度マトリクス: sRGB 輝度重み使用
 const saturationMatrix = (amount: number): number[] => {
   const s = Math.max(0, 1 + amount / 100);
-  const lr = 0.213,
-    lg = 0.715,
-    lb = 0.072;
-  const dr = (1 - s) * lr,
-    dg = (1 - s) * lg,
-    db = (1 - s) * lb;
+  const lr = 0.213;
+  const lg = 0.715;
+  const lb = 0.072;
+  const dr = (1 - s) * lr;
+  const dg = (1 - s) * lg;
+  const db = (1 - s) * lb;
   // prettier-ignore
   return [
     dr + s, dg,     db,     0, 0,
@@ -95,7 +101,9 @@ export const buildColorMatrix = (adj: AdjustmentState): number[] => {
   const C = contrastMatrix(adj.contrast);
   const S = saturationMatrix(adj.saturation);
   const T = temperatureTintMatrix(adj.temperature, adj.tint);
-  return mulMatrix(T, mulMatrix(S, mulMatrix(C, B)));
+  const BC = mulMatrix(C, B);
+  const BCS = mulMatrix(S, BC);
+  return mulMatrix(T, BCS);
 };
 
 // グレインを重ねるための RuntimeShader ソース（クロスプラットフォーム）
@@ -125,11 +133,12 @@ export const renderFilteredImageToBase64 = (
   if (!colorSurface) {
     throw new Error('Skia.Surface.Make が失敗しました');
   }
-  const c1 = colorSurface.getCanvas();
+  const colorCanvas = colorSurface.getCanvas();
   const colorPaint = Skia.Paint();
   colorPaint.setColorFilter(Skia.ColorFilter.MakeMatrix(buildColorMatrix(adj)));
-  c1.drawImage(skImage, 0, 0, colorPaint);
+  colorCanvas.drawImage(skImage, 0, 0, colorPaint);
   const colorImage = colorSurface.makeImageSnapshot();
+  colorSurface.dispose();
 
   // グレインなしの場合はそのまま JPEG エンコード
   if (adj.grain <= 0) {
@@ -147,15 +156,22 @@ export const renderFilteredImageToBase64 = (
     return colorImage.encodeToBase64(ImageFormat.JPEG, 92);
   }
 
-  const c2 = grainSurface.getCanvas();
-  c2.drawImage(colorImage, 0, 0);
+  const grainCanvas = grainSurface.getCanvas();
+  grainCanvas.drawImage(colorImage, 0, 0);
 
   const grainPaint = Skia.Paint();
   // uniforms の順番はシェーダーの宣言順に合わせる: grainAmount, seed
-  grainPaint.setShader(grainEffect.makeShader([adj.grain / 100, 0.42]));
+  // seed は保存ごとにランダム化してフィルム風の多様なノイズパターンを生成する
+  grainPaint.setShader(
+    grainEffect.makeShader([adj.grain / 100, Math.random()])
+  );
   grainPaint.setBlendMode(BlendMode.Overlay);
   // react-native-skia の SkRect は {x, y, width, height} オブジェクト
-  c2.drawRect({ x: 0, y: 0, width: w, height: h }, grainPaint);
+  grainCanvas.drawRect({ x: 0, y: 0, width: w, height: h }, grainPaint);
 
-  return grainSurface.makeImageSnapshot().encodeToBase64(ImageFormat.JPEG, 92);
+  const result = grainSurface
+    .makeImageSnapshot()
+    .encodeToBase64(ImageFormat.JPEG, 92);
+  grainSurface.dispose();
+  return result;
 };
