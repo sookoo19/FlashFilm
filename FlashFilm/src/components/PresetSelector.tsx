@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { PresetOption } from '../constants/presets';
 import type { PresetKey } from '../types/imageProcessing';
@@ -10,6 +11,61 @@ type PresetSelectorProps = {
   disabled?: boolean;
 };
 
+type PresetItemProps = {
+  preset: PresetOption;
+  isSelected: boolean;
+  onSelect: () => void;
+  disabled: boolean;
+};
+
+const PresetItem = ({
+  preset,
+  isSelected,
+  onSelect,
+  disabled,
+}: PresetItemProps) => {
+  // useState initializer keeps the Animated.Value stable without .current in render
+  const [indicatorAnim] = useState(
+    () => new Animated.Value(isSelected ? 1 : 0)
+  );
+
+  useEffect(() => {
+    Animated.spring(indicatorAnim, {
+      toValue: isSelected ? 1 : 0,
+      speed: 22,
+      bounciness: 0,
+      useNativeDriver: true,
+    }).start();
+  }, [isSelected, indicatorAnim]);
+
+  return (
+    <Pressable
+      style={[
+        styles.presetButton,
+        isSelected && styles.presetButtonSelected,
+        disabled && styles.disabled,
+      ]}
+      onPress={onSelect}
+      disabled={disabled}
+      accessibilityRole='tab'
+      accessibilityState={{ selected: isSelected }}
+    >
+      <Text
+        style={[styles.presetLabel, isSelected && styles.presetLabelSelected]}
+      >
+        {preset.label}
+      </Text>
+      {/* Indicator bar — springs in when selected, springs out when deselected */}
+      <Animated.View
+        style={[
+          styles.indicator,
+          { opacity: indicatorAnim, transform: [{ scaleX: indicatorAnim }] },
+        ]}
+      />
+    </Pressable>
+  );
+};
+
 const PresetSelector = ({
   presets,
   selectedPreset,
@@ -18,31 +74,15 @@ const PresetSelector = ({
 }: PresetSelectorProps) => {
   return (
     <View style={styles.container}>
-      {presets.map(preset => {
-        const isSelected = preset.key === selectedPreset;
-
-        return (
-          <Pressable
-            key={preset.key}
-            style={[
-              styles.presetButton,
-              isSelected && styles.presetButtonSelected,
-              disabled && styles.disabled,
-            ]}
-            onPress={() => onSelectPreset(preset.key)}
-            disabled={disabled}
-          >
-            <Text
-              style={[
-                styles.presetLabel,
-                isSelected && styles.presetLabelSelected,
-              ]}
-            >
-              {preset.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+      {presets.map(preset => (
+        <PresetItem
+          key={preset.key}
+          preset={preset}
+          isSelected={preset.key === selectedPreset}
+          onSelect={() => onSelectPreset(preset.key)}
+          disabled={disabled}
+        />
+      ))}
     </View>
   );
 };
@@ -55,24 +95,35 @@ const styles = StyleSheet.create({
   },
   presetButton: {
     flex: 1,
+    height: 40,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#3a3a3a',
     backgroundColor: '#1b1b1b',
-    paddingVertical: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   presetButtonSelected: {
     borderColor: '#f0f0f0',
     backgroundColor: '#2a2a2a',
   },
   presetLabel: {
-    color: '#b5b5b5',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#888888',
+    fontSize: 15,
+    fontWeight: '500',
   },
   presetLabelSelected: {
     color: '#f0f0f0',
+    fontWeight: '600',
+  },
+  indicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: '25%',
+    right: '25%',
+    height: 2,
+    borderRadius: 2,
+    backgroundColor: '#f0f0f0',
   },
   disabled: {
     opacity: 0.6,

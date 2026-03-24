@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 出力ガイド/ 学習重視の対話方針
+
+- このリポジトリでは、ユーザーは写経しながら学習して開発を進める。Copilot は原則としてコードを直接実装・編集せず、学習を支援する説明役として振る舞う。
+- まず現在の対象ファイルや既存コードをユーザーと一緒に確認し、その後に変更箇所を順番に案内する。
+- 各変更箇所ごとに、以下の順番で案内する。
+  1. どこを変更するか
+  2. 変更後のコード
+  3. なぜその変更が必要か
+- 一度に全体をまとめて実装するのではなく、1 箇所ずつ段階的に進める。複数ファイルにまたがる場合も同様に、変更単位ごとに区切って説明する。
+- ユーザーが明示的に「実装して」と依頼しない限り、ファイル編集・コード生成の適用・自動修正は行わない。
+- コードを提示する際は、既存構造にどう接続されるか、関連する型や定数、呼び出し元まで含めて説明し、ユーザーが手で写経できる粒度に分ける。
+
 ## Design System
 
 UI生成時は `melta-ui/CLAUDE.md` を参照すること。melta UI デザインシステム（Tailwind CSS ベース、28コンポーネント）が定義されている。
@@ -63,9 +75,9 @@ The library is loaded **dynamically** at module level (`require(...)`) because s
 
 Each save produces a sample with ID `sample-<ISO timestamp>-<random>`:
 
-| File | Content |
-|---|---|
-| `target.jpg` | Processed (or original) image |
+| File          | Content                                                     |
+| ------------- | ----------------------------------------------------------- |
+| `target.jpg`  | Processed (or original) image                               |
 | `recipe.json` | `AiEditRecipe` — version, presetId, and 6 adjustment values |
 
 **In `__DEV__`:** POSTs base64 image + recipe to the local collector server (`npm run step4:collector`, port 43110). The server writes samples to `FlashFilm/dataset/step4/`.
@@ -87,20 +99,24 @@ Each save produces a sample with ID `sample-<ISO timestamp>-<random>`:
 > 詳細は `.impeccable.md` を参照。このセクションは `/impeccable:teach-impeccable` によって生成。
 
 ### Users
+
 - **対象**: クリエイター全般（写真愛好家、ビジュアルアーティスト、実験好きなエンジニア・デザイナー）
 - **ジョブ**: フィルム風写真を自分のスタイルで仕上げ、そのレシピをAIに学習させる
 
 ### Brand Personality
+
 - **3語**: 実験・探求・発見（Experiment · Explore · Discover）
 - **ムード**: インスタントカメラのノスタルジー × AI研究の精緻さ
 
 ### Aesthetic Direction
+
 - **テーマ**: ダークモードのみ（純黒ベース、フィルムグレイン質感）
 - **カラーパレット**: 背景 `#000` / サーフェス `#0f0f0f` / ボーダー `#222`〜`#3a3a3a` / テキスト `#f0f0f0`
 - **参考**: Lomography App、VSCO、Darkroom
 - **アンチ**: 白背景カメラアプリ、ネオンカラー、過剰アニメーション
 
 ### Design Principles
+
 1. **Dark Canvas First** — 画像が主役。UIは暗い黒子として写真の色と光を際立たせる
 2. **Analog Soul, Digital Precision** — フィルムの質感を保ちながら、数値は正確に表示する
 3. **Intentional Constraints** — 制約がクリエイティビティを生む。UIでも意図的な制限を恐れない
