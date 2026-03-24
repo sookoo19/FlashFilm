@@ -28,9 +28,10 @@ const mulMatrix = (a: number[], b: number[]): number[] => {
   return out;
 };
 
-// 露出（EV）マトリクス: brightnessScale = 2^stops で RGB を乗算
+// 露出マトリクス: 1ユニット = 1/3 EV として RGB を乗算
+// （2^1 = 2倍は変化が大きすぎるため、2^(stops/3) に緩和）
 const brightnessMatrix = (stops: number): number[] => {
-  const s = Math.pow(2, clamp(stops, -5, 5));
+  const s = Math.pow(2, clamp(stops, -5, 5) / 3);
   // prettier-ignore
   return [
     s, 0, 0, 0, 0,

@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 type AdjustmentSliderProps = {
   label: string;
@@ -12,6 +13,8 @@ type AdjustmentSliderProps = {
 
 const toFixedValue = (value: number) => Number(value.toFixed(2));
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 const AdjustmentSlider = ({
   label,
   value,
@@ -24,12 +27,34 @@ const AdjustmentSlider = ({
   const isDecrementDisabled = disabled || value <= min;
   const isIncrementDisabled = disabled || value >= max;
 
+  // useState initializer so Animated.Value is stable without accessing .current in render
+  const [decrementScale] = useState(() => new Animated.Value(1));
+  const [incrementScale] = useState(() => new Animated.Value(1));
+
+  const pressIn = (anim: Animated.Value) =>
+    Animated.spring(anim, {
+      toValue: 0.85,
+      speed: 60,
+      bounciness: 0,
+      useNativeDriver: true,
+    }).start();
+
+  const pressOut = (anim: Animated.Value) =>
+    Animated.spring(anim, {
+      toValue: 1,
+      speed: 18,
+      bounciness: 6,
+      useNativeDriver: true,
+    }).start();
+
   const handleDecrement = () => {
+    if (isDecrementDisabled) return;
     const nextValue = Math.max(min, value - step);
     onChange(toFixedValue(nextValue));
   };
 
   const handleIncrement = () => {
+    if (isIncrementDisabled) return;
     const nextValue = Math.min(max, value + step);
     onChange(toFixedValue(nextValue));
   };
@@ -39,29 +64,41 @@ const AdjustmentSlider = ({
       <Text style={styles.label}>{label}</Text>
 
       <View style={styles.valueArea}>
-        <Pressable
+        <AnimatedPressable
           style={[
             styles.adjustButton,
             isDecrementDisabled && styles.adjustButtonDisabled,
+            { transform: [{ scale: decrementScale }] },
           ]}
           onPress={handleDecrement}
+          onPressIn={() => !isDecrementDisabled && pressIn(decrementScale)}
+          onPressOut={() => pressOut(decrementScale)}
           disabled={isDecrementDisabled}
+          accessibilityLabel={`${label}を減らす`}
+          accessibilityRole='button'
+          accessibilityState={{ disabled: isDecrementDisabled }}
         >
           <Text style={styles.adjustButtonText}>-</Text>
-        </Pressable>
+        </AnimatedPressable>
 
         <Text style={styles.valueText}>{value.toFixed(2)}</Text>
 
-        <Pressable
+        <AnimatedPressable
           style={[
             styles.adjustButton,
             isIncrementDisabled && styles.adjustButtonDisabled,
+            { transform: [{ scale: incrementScale }] },
           ]}
           onPress={handleIncrement}
+          onPressIn={() => !isIncrementDisabled && pressIn(incrementScale)}
+          onPressOut={() => pressOut(incrementScale)}
           disabled={isIncrementDisabled}
+          accessibilityLabel={`${label}を増やす`}
+          accessibilityRole='button'
+          accessibilityState={{ disabled: isIncrementDisabled }}
         >
           <Text style={styles.adjustButtonText}>+</Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
     </View>
   );
@@ -72,12 +109,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 10,
+    paddingVertical: 6,
   },
   label: {
     color: '#f0f0f0',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
+    flex: 1,
   },
   valueArea: {
     flexDirection: 'row',
@@ -85,9 +123,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   adjustButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#3a3a3a',
     backgroundColor: '#1f1f1f',
@@ -99,16 +137,16 @@ const styles = StyleSheet.create({
   },
   adjustButtonText: {
     color: '#f0f0f0',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '600',
     lineHeight: 18,
   },
   valueText: {
-    color: '#bbb',
-    fontSize: 12,
+    color: '#cccccc',
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.2,
-    minWidth: 42,
+    minWidth: 48,
     textAlign: 'center',
   },
 });
