@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { AdjustmentKey } from '../types/imageProcessing';
 
 type AdjustmentSliderProps = {
+  adjustmentKey: AdjustmentKey;
   label: string;
   value: number;
   min: number;
   max: number;
   step: number;
-  onChange: (nextValue: number) => void;
+  onChange: (key: AdjustmentKey, nextValue: number) => void;
   disabled?: boolean;
 };
 
@@ -15,7 +17,25 @@ const toFixedValue = (value: number) => Number(value.toFixed(2));
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-const AdjustmentSlider = ({
+// モジュールスコープに置くことでレンダーごとの再生成を防ぐ
+const animatePressIn = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 0.85,
+    speed: 60,
+    bounciness: 0,
+    useNativeDriver: true,
+  }).start();
+
+const animatePressOut = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 1,
+    speed: 18,
+    bounciness: 6,
+    useNativeDriver: true,
+  }).start();
+
+const AdjustmentSlider = memo(({
+  adjustmentKey,
   label,
   value,
   min,
@@ -31,32 +51,14 @@ const AdjustmentSlider = ({
   const [decrementScale] = useState(() => new Animated.Value(1));
   const [incrementScale] = useState(() => new Animated.Value(1));
 
-  const pressIn = (anim: Animated.Value) =>
-    Animated.spring(anim, {
-      toValue: 0.85,
-      speed: 60,
-      bounciness: 0,
-      useNativeDriver: true,
-    }).start();
-
-  const pressOut = (anim: Animated.Value) =>
-    Animated.spring(anim, {
-      toValue: 1,
-      speed: 18,
-      bounciness: 6,
-      useNativeDriver: true,
-    }).start();
-
   const handleDecrement = () => {
     if (isDecrementDisabled) return;
-    const nextValue = Math.max(min, value - step);
-    onChange(toFixedValue(nextValue));
+    onChange(adjustmentKey, toFixedValue(Math.max(min, value - step)));
   };
 
   const handleIncrement = () => {
     if (isIncrementDisabled) return;
-    const nextValue = Math.min(max, value + step);
-    onChange(toFixedValue(nextValue));
+    onChange(adjustmentKey, toFixedValue(Math.min(max, value + step)));
   };
 
   return (
@@ -71,8 +73,8 @@ const AdjustmentSlider = ({
             { transform: [{ scale: decrementScale }] },
           ]}
           onPress={handleDecrement}
-          onPressIn={() => !isDecrementDisabled && pressIn(decrementScale)}
-          onPressOut={() => pressOut(decrementScale)}
+          onPressIn={() => !isDecrementDisabled && animatePressIn(decrementScale)}
+          onPressOut={() => animatePressOut(decrementScale)}
           disabled={isDecrementDisabled}
           accessibilityLabel={`${label}を減らす`}
           accessibilityRole='button'
@@ -90,8 +92,8 @@ const AdjustmentSlider = ({
             { transform: [{ scale: incrementScale }] },
           ]}
           onPress={handleIncrement}
-          onPressIn={() => !isIncrementDisabled && pressIn(incrementScale)}
-          onPressOut={() => pressOut(incrementScale)}
+          onPressIn={() => !isIncrementDisabled && animatePressIn(incrementScale)}
+          onPressOut={() => animatePressOut(incrementScale)}
           disabled={isIncrementDisabled}
           accessibilityLabel={`${label}を増やす`}
           accessibilityRole='button'
@@ -102,7 +104,7 @@ const AdjustmentSlider = ({
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
