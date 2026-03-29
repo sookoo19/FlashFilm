@@ -72,6 +72,26 @@ const GRAIN_SHADER_SRC = `
 // モジュールスコープで一度だけコンパイルする
 const grainEffect = Skia.RuntimeEffect.Make(GRAIN_SHADER_SRC) ?? null;
 
+// ボタンアニメーション helper — モジュールスコープに置くことでレンダーごとの再生成を防ぐ
+const animatePressIn = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 0.96,
+    speed: 60,
+    bounciness: 0,
+    useNativeDriver: true,
+  }).start();
+
+const animatePressOut = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 1,
+    speed: 20,
+    bounciness: 4,
+    useNativeDriver: true,
+  }).start();
+
+// プレビュー領域: ボタン・注釈エリアを除いた残りの高さを計算するための定数
+const BOTTOM_CONTROLS_HEIGHT = 120;
+
 const clamp = (v: number, min: number, max: number) =>
   Math.min(max, Math.max(min, v));
 
@@ -106,22 +126,6 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
   const [saveScale] = useState(() => new Animated.Value(1));
   const [retakeScale] = useState(() => new Animated.Value(1));
 
-  const btnPressIn = (anim: Animated.Value) =>
-    Animated.spring(anim, {
-      toValue: 0.96,
-      speed: 60,
-      bounciness: 0,
-      useNativeDriver: true,
-    }).start();
-
-  const btnPressOut = (anim: Animated.Value) =>
-    Animated.spring(anim, {
-      toValue: 1,
-      speed: 20,
-      bounciness: 4,
-      useNativeDriver: true,
-    }).start();
-
   // Skia がネイティブで画像を読み込む
   // file:// URI に対応している（expo-camera の出力 URI をそのまま渡せる）
   const skImage = useImage(photo.uri);
@@ -129,7 +133,6 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   // プレビュー領域: ボタン・注釈エリアを除いた残りの 60%
-  const BOTTOM_CONTROLS_HEIGHT = 120;
   const previewHeight = (windowHeight - BOTTOM_CONTROLS_HEIGHT) * 0.6;
 
   // 元画像のアスペクト比を維持してプレビューサイズを決める
@@ -185,33 +188,34 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     (key: AdjustmentKey, nextValue: number) => {
       const { min, max } = ADJUSTMENT_RANGES[key];
       const clamped = Number(clamp(nextValue, min, max).toFixed(2));
+      // setAdjustments の updater 形式で現在値を参照するため依存配列は空でよい
       setAdjustments(prev => ({ ...prev, [key]: clamped }));
     },
-    []
+    [ADJUSTMENT_RANGES]
   );
 
-  const handleRetake = () => {
+  const handleRetake = useCallback(() => {
     navigation.goBack();
-  };
+  }, [navigation]);
 
   const handleConfirm = async () => {
     if (isSaving) return;
+    if (hasAdjustmentChanged && !skImage) {
+      Alert.alert(
+        '処理中です',
+        '画像の読み込みが完了してから保存してください。'
+      );
+      return;
+    }
     setIsSaving(true);
 
     try {
       let targetBase64: string | null = null;
 
       if (hasAdjustmentChanged) {
-        if (!skImage) {
-          Alert.alert(
-            '処理中です',
-            '画像の読み込みが完了してから保存してください。'
-          );
-          return;
-        }
         // オフスクリーンレンダリングで調整済み画像を生成する
         // Canvas コンポーネントへの参照は不要で、同期的に完結する
-        targetBase64 = renderFilteredImageToBase64(skImage, adjustments);
+        targetBase64 = renderFilteredImageToBase64(skImage!, adjustments);
       }
 
       const recipe: AiEditRecipe = {
@@ -252,13 +256,19 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     }
   };
 
+  // インラインオブジェクトを避けるためにメモ化
+  const canvasStyle = useMemo(
+    () => ({ width: windowWidth, height: previewHeight }),
+    [windowWidth, previewHeight]
+  );
+
   const editorPanelHeight = (windowHeight - BOTTOM_CONTROLS_HEIGHT) * 0.4;
 
   return (
     <View style={styles.container}>
       {/* プレビューエリア: Skia Canvas で描画 */}
       <View style={[styles.previewHolder, { height: previewHeight }]}>
-        <Canvas style={{ width: windowWidth, height: previewHeight }}>
+        <Canvas style={canvasStyle}>
           {skImage && (
             <>
               {/* カラーフィルターを Image の子要素として宣言する */}
@@ -274,7 +284,7 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
               </SkiaImage>
 
               {/* グレイン: Overlay ブレンドのノイズシェーダーを重ねる */}
-              {adjustments.grain > 0 && grainEffect && (
+              {adjustments.grain > 0 && grainEffect !== null && (
                 <Rect
                   x={previewLeft}
                   y={previewTop}
@@ -314,12 +324,13 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
             return (
               <AdjustmentSlider
                 key={key}
+                adjustmentKey={key}
                 label={range.label}
                 value={adjustments[key]}
                 min={range.min}
                 max={range.max}
                 step={ADJUSTMENT_STEP}
-                onChange={nextValue => handleChangeAdjustment(key, nextValue)}
+                onChange={handleChangeAdjustment}
                 disabled={isSaving}
               />
             );
@@ -336,8 +347,8 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
             { transform: [{ scale: retakeScale }] },
           ]}
           onPress={handleRetake}
-          onPressIn={() => btnPressIn(retakeScale)}
-          onPressOut={() => btnPressOut(retakeScale)}
+          onPressIn={() => animatePressIn(retakeScale)}
+          onPressOut={() => animatePressOut(retakeScale)}
           disabled={isSaving}
         >
           <Text style={styles.secondaryText}>Retake</Text>
@@ -350,8 +361,8 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
             { transform: [{ scale: saveScale }] },
           ]}
           onPress={handleConfirm}
-          onPressIn={() => !isSaving && btnPressIn(saveScale)}
-          onPressOut={() => btnPressOut(saveScale)}
+          onPressIn={() => !isSaving && animatePressIn(saveScale)}
+          onPressOut={() => animatePressOut(saveScale)}
           disabled={isSaving}
         >
           <Text style={styles.primaryText}>
