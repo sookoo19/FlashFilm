@@ -22,15 +22,37 @@ $ARGUMENTS を以下のルールで解釈してください：
 
 ### 利用可能なreviewer名
 
-- `reviewer` - Claude自身による詳細レビュー
+**エージェント型**（専用エージェントを起動）:
+
+- `reviewer` - Claude自身による詳細レビュー（品質・セキュリティ・パフォーマンス）
 - `simplify-reviewer` - 可読性・一貫性・保守性に特化したレビュー
+
+**スキル型**（Vercelガイドラインを読み込んでgeneral-purposeエージェントで実行）:
+
+- `vercel-react-native-skills` - React Native / Expo ベストプラクティス。ガイドライン: `.claude/skills/vercel-react-native-skills/AGENTS.md`
+- `vercel-composition-patterns` - Reactコンポーネント設計パターン。ガイドライン: `.claude/skills/vercel-composition-patterns/AGENTS.md`
+- `vercel-react-best-practices` - React / Next.js パフォーマンス最適化。ガイドライン: `.claude/skills/vercel-react-best-practices/AGENTS.md`
+
+**以上三つのスキルは"/Users/suzukikohei/Desktop/tech train/FlashFilm/.claude/skills"にあります**
 
 reviewer名が上記のいずれにも一致しない場合は、エラーとしてユーザーに利用可能なreviewer名を案内してください。
 
 ## ステップ2: レビュー実行
 
-- reviewer名が指定された場合: そのreviewerのエージェントを起動し、レビュー対象の情報を渡してコードレビューを実行する
-- reviewer名が省略された場合: 全reviewerのエージェントを**同時に並列起動**し、レビュー対象の情報を渡してコードレビューを実行する
+- reviewer名が指定された場合: そのreviewerを以下のルールで起動し、レビュー対象の情報を渡してコードレビューを実行する
+- reviewer名が省略された場合: 全reviewerを**同時に並列起動**し、レビュー対象の情報を渡してコードレビューを実行する
+
+### reviewer種別ごとの起動方法
+
+**エージェント型** (`reviewer`, `simplify-reviewer`):
+
+- `subagent_type` にreviewer名をそのまま指定してAgentツールで起動する
+
+**スキル型** (`vercel-react-native-skills`, `vercel-composition-patterns`, `vercel-react-best-practices`):
+
+1. 対応する `AGENTS.md` ファイルを読み込む
+2. `subagent_type: general-purpose` で起動し、プロンプトに「AGENTS.mdのガイドライン全文 + diff」を含める
+3. 「このガイドラインに照らしてdiffをレビューし、違反・改善点を日本語で報告してください」と指示する
 
 ## ステップ3: レビュー修正
 

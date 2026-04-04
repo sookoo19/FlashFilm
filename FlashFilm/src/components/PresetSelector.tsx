@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { PresetOption } from '../constants/presets';
@@ -12,14 +12,16 @@ type PresetSelectorProps = {
 };
 
 type PresetItemProps = {
-  preset: PresetOption;
+  presetKey: PresetKey;
+  label: string;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (key: PresetKey) => void;
   disabled: boolean;
 };
 
-const PresetItem = ({
-  preset,
+const PresetItem = memo(({
+  presetKey,
+  label,
   isSelected,
   onSelect,
   disabled,
@@ -45,7 +47,7 @@ const PresetItem = ({
         isSelected && styles.presetButtonSelected,
         disabled && styles.disabled,
       ]}
-      onPress={onSelect}
+      onPress={() => onSelect(presetKey)}
       disabled={disabled}
       accessibilityRole='tab'
       accessibilityState={{ selected: isSelected }}
@@ -53,7 +55,7 @@ const PresetItem = ({
       <Text
         style={[styles.presetLabel, isSelected && styles.presetLabelSelected]}
       >
-        {preset.label}
+        {label}
       </Text>
       {/* Indicator bar — springs in when selected, springs out when deselected */}
       <Animated.View
@@ -64,9 +66,9 @@ const PresetItem = ({
       />
     </Pressable>
   );
-};
+});
 
-const PresetSelector = ({
+const PresetSelector = memo(({
   presets,
   selectedPreset,
   onSelectPreset,
@@ -77,15 +79,16 @@ const PresetSelector = ({
       {presets.map(preset => (
         <PresetItem
           key={preset.key}
-          preset={preset}
+          presetKey={preset.key}
+          label={preset.label}
           isSelected={preset.key === selectedPreset}
-          onSelect={() => onSelectPreset(preset.key)}
+          onSelect={onSelectPreset}
           disabled={disabled}
         />
       ))}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

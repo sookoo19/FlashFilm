@@ -47,6 +47,24 @@ type CameraScreenNavigationProp = NativeStackNavigationProp<
 
 // フラッシュの固定設定を作ります（この例では常にON）
 const FLASH_MODE: FlashMode = FlashMode.on;
+
+// キャプチャボタンのアニメーション helper — モジュールスコープに置くことでレンダーごとの再生成を防ぐ
+const animatePressIn = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 0.92,
+    speed: 60,
+    bounciness: 0,
+    useNativeDriver: true,
+  }).start();
+
+const animatePressOut = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 1,
+    speed: 14,
+    bounciness: 5,
+    useNativeDriver: true,
+  }).start();
+
 const MIN_ZOOM = 0; // expo-camera の最小ズーム。端末の広角がここにマップされる
 const MAX_ZOOM = 0.1; // 過度なデジタルズームを抑えるため上限を絞る
 const clampZoom = (value: number) =>
@@ -125,10 +143,6 @@ const CameraScreen = () => {
     }
     // permission と requestPermission が変わったら、この処理をやり直します
   }, [permission, requestPermission]);
-
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
 
   // 開発用の既定画像で編集画面へ進む処理です
   const handleUseDevDefaultPhoto = async () => {
@@ -243,6 +257,7 @@ const CameraScreen = () => {
   // カメラの向きを切り替える処理です
   const handleToggleFacing = () => {
     setFacing(prev => (prev === 'back' ? 'front' : 'back'));
+    zoomRef.current = 0; // useEffect を経由せず同期的に ref を更新する
     setZoom(0); // 切替時はリセット
   };
 
@@ -282,6 +297,7 @@ const CameraScreen = () => {
       const nextZoom = clampZoom(
         pinchStartZoom.current + (event.scale - 1) * PINCH_ZOOM_SENSITIVITY
       );
+      zoomRef.current = nextZoom; // useEffect を経由せず同期的に ref を更新する
       setZoom(nextZoom);
     })
     .onEnd(() => {
@@ -365,21 +381,9 @@ const CameraScreen = () => {
               onPress={handleTakePicture}
               onPressIn={() => {
                 if (!isReady || isCapturing) return;
-                Animated.spring(captureScale, {
-                  toValue: 0.92,
-                  speed: 60,
-                  bounciness: 0,
-                  useNativeDriver: true,
-                }).start();
+                animatePressIn(captureScale);
               }}
-              onPressOut={() =>
-                Animated.spring(captureScale, {
-                  toValue: 1,
-                  speed: 14,
-                  bounciness: 5,
-                  useNativeDriver: true,
-                }).start()
-              }
+              onPressOut={() => animatePressOut(captureScale)}
               disabled={!isReady || isCapturing}
             >
               {/* 撮影中はくるくる、そうでなければ文字を出します */}

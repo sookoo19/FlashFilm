@@ -2,6 +2,7 @@ import { type NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   Canvas,
   ColorMatrix,
+  Group,
   Image as SkiaImage,
   Rect,
   Shader,
@@ -25,8 +26,13 @@ import {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 import AdjustmentSlider from '../../components/AdjustmentSlider';
+import ColorGradingPanel from '../../components/ColorGradingPanel';
+import ColorMixerPanel from '../../components/ColorMixerPanel';
+import EditorTabBar, { type EditorTab } from '../../components/EditorTabBar';
 import {
   buildColorMatrix,
+  colorGradingEffect,
+  colorMixerEffect,
   renderFilteredImageToBase64,
 } from '../../services/image/skiaFilter';
 import { saveDatasetSample } from '../../services/storage/datasetStorage';
@@ -37,9 +43,14 @@ import {
 import {
   ADJUSTMENT_RANGES,
   ADJUSTMENT_STEP,
+  COLOR_CHANNELS,
   DEFAULT_ADJUSTMENTS,
+  DEFAULT_COLOR_GRADING,
+  DEFAULT_COLOR_MIXER,
   type AdjustmentKey,
   type AdjustmentState,
+  type ColorGradingState,
+  type ColorMixerState,
 } from '../../types/imageProcessing';
 import type { RootStackParamList } from '../../types/navigation';
 
@@ -72,6 +83,26 @@ const GRAIN_SHADER_SRC = `
 // モジュールスコープで一度だけコンパイルする
 const grainEffect = Skia.RuntimeEffect.Make(GRAIN_SHADER_SRC) ?? null;
 
+// ボタンアニメーション helper — モジュールスコープに置くことでレンダーごとの再生成を防ぐ
+const animatePressIn = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 0.96,
+    speed: 60,
+    bounciness: 0,
+    useNativeDriver: true,
+  }).start();
+
+const animatePressOut = (anim: Animated.Value) =>
+  Animated.spring(anim, {
+    toValue: 1,
+    speed: 20,
+    bounciness: 4,
+    useNativeDriver: true,
+  }).start();
+
+// プレビュー領域: ボタン・注釈エリアを除いた残りの高さを計算するための定数
+const BOTTOM_CONTROLS_HEIGHT = 120;
+
 const clamp = (v: number, min: number, max: number) =>
   Math.min(max, Math.max(min, v));
 
@@ -81,6 +112,13 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
   const [isSaving, setIsSaving] = useState(false);
   const [adjustments, setAdjustments] =
     useState<AdjustmentState>(DEFAULT_ADJUSTMENTS);
+
+  const [activeTab, setActiveTab] = useState<EditorTab>('basic');
+  const [colorGrading, setColorGrading] = useState<ColorGradingState>(
+    DEFAULT_COLOR_GRADING
+  );
+  const [colorMixer, setColorMixer] =
+    useState<ColorMixerState>(DEFAULT_COLOR_MIXER);
 
   // Editor panel entrance: slides up + fades in on mount
   // useState initializer keeps Animated.Value stable without .current in render
@@ -106,22 +144,6 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
   const [saveScale] = useState(() => new Animated.Value(1));
   const [retakeScale] = useState(() => new Animated.Value(1));
 
-  const btnPressIn = (anim: Animated.Value) =>
-    Animated.spring(anim, {
-      toValue: 0.96,
-      speed: 60,
-      bounciness: 0,
-      useNativeDriver: true,
-    }).start();
-
-  const btnPressOut = (anim: Animated.Value) =>
-    Animated.spring(anim, {
-      toValue: 1,
-      speed: 20,
-      bounciness: 4,
-      useNativeDriver: true,
-    }).start();
-
   // Skia がネイティブで画像を読み込む
   // file:// URI に対応している（expo-camera の出力 URI をそのまま渡せる）
   const skImage = useImage(photo.uri);
@@ -129,7 +151,6 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   // プレビュー領域: ボタン・注釈エリアを除いた残りの 60%
-  const BOTTOM_CONTROLS_HEIGHT = 120;
   const previewHeight = (windowHeight - BOTTOM_CONTROLS_HEIGHT) * 0.6;
 
   // 元画像のアスペクト比を維持してプレビューサイズを決める
@@ -155,10 +176,13 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     };
   }, [skImage, windowWidth, previewHeight]);
 
-  // 全スライダーが初期値かどうか
+  // 全スライダーが初期値かどうか（colorGrading/colorMixer も含む）
   const hasAdjustmentChanged = useMemo(
-    () => ADJUSTMENT_KEYS.some(k => adjustments[k] !== DEFAULT_ADJUSTMENTS[k]),
-    [adjustments]
+    () =>
+      ADJUSTMENT_KEYS.some(k => adjustments[k] !== DEFAULT_ADJUSTMENTS[k]) ||
+      JSON.stringify(colorGrading) !== JSON.stringify(DEFAULT_COLOR_GRADING) ||
+      JSON.stringify(colorMixer) !== JSON.stringify(DEFAULT_COLOR_MIXER),
+    [adjustments, colorGrading, colorMixer]
   );
 
   // Skia ColorMatrix（プレビュー Canvas に渡す）
@@ -181,37 +205,88 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     [adjustments.grain]
   );
 
+  // カラーグレーディング用イメージフィルター（shadows/midtones/highlights が変わった時だけ再生成）
+  const colorGradingPaint = useMemo(() => {
+    if (!colorGradingEffect) return undefined;
+    const { shadows: sh, midtones: mi, highlights: hi } = colorGrading;
+    const builder = Skia.RuntimeShaderBuilder(colorGradingEffect);
+    builder.setUniform('sh_h', [sh.hue]);
+    builder.setUniform('sh_s', [sh.saturation]);
+    builder.setUniform('sh_l', [sh.luminance]);
+    builder.setUniform('mi_h', [mi.hue]);
+    builder.setUniform('mi_s', [mi.saturation]);
+    builder.setUniform('mi_l', [mi.luminance]);
+    builder.setUniform('hi_h', [hi.hue]);
+    builder.setUniform('hi_s', [hi.saturation]);
+    builder.setUniform('hi_l', [hi.luminance]);
+    const paint = Skia.Paint();
+    paint.setImageFilter(
+      Skia.ImageFilter.MakeRuntimeShader(builder, 'image', null)
+    );
+    return paint;
+  }, [colorGrading]);
+
+  // カラーミキサー用イメージフィルター（8チャンネル分のユニフォームを一括セット）
+  const colorMixerPaint = useMemo(() => {
+    if (!colorMixerEffect) return undefined;
+    const builder = Skia.RuntimeShaderBuilder(colorMixerEffect);
+    COLOR_CHANNELS.forEach((ch, i) => {
+      builder.setUniform(`ch_${i * 3}`, [colorMixer[ch].hue]);
+      builder.setUniform(`ch_${i * 3 + 1}`, [colorMixer[ch].saturation]);
+      builder.setUniform(`ch_${i * 3 + 2}`, [colorMixer[ch].luminance]);
+    });
+    const paint = Skia.Paint();
+    paint.setImageFilter(
+      Skia.ImageFilter.MakeRuntimeShader(builder, 'image', null)
+    );
+    return paint;
+  }, [colorMixer]);
+
   const handleChangeAdjustment = useCallback(
     (key: AdjustmentKey, nextValue: number) => {
       const { min, max } = ADJUSTMENT_RANGES[key];
       const clamped = Number(clamp(nextValue, min, max).toFixed(2));
+      // setAdjustments の updater 形式で現在値を参照するため依存配列は空でよい
       setAdjustments(prev => ({ ...prev, [key]: clamped }));
     },
-    []
+    [ADJUSTMENT_RANGES]
   );
 
-  const handleRetake = () => {
+  const handleRetake = useCallback(() => {
     navigation.goBack();
-  };
+  }, [navigation]);
+
+  const handleColorGradingChange = useCallback((next: ColorGradingState) => {
+    setColorGrading(next);
+  }, []);
+
+  const handleColorMixerChange = useCallback((next: ColorMixerState) => {
+    setColorMixer(next);
+  }, []);
 
   const handleConfirm = async () => {
     if (isSaving) return;
+    if (hasAdjustmentChanged && !skImage) {
+      Alert.alert(
+        '処理中です',
+        '画像の読み込みが完了してから保存してください。'
+      );
+      return;
+    }
     setIsSaving(true);
 
     try {
       let targetBase64: string | null = null;
 
       if (hasAdjustmentChanged) {
-        if (!skImage) {
-          Alert.alert(
-            '処理中です',
-            '画像の読み込みが完了してから保存してください。'
-          );
-          return;
-        }
         // オフスクリーンレンダリングで調整済み画像を生成する
         // Canvas コンポーネントへの参照は不要で、同期的に完結する
-        targetBase64 = renderFilteredImageToBase64(skImage, adjustments);
+        targetBase64 = renderFilteredImageToBase64(
+          skImage!,
+          adjustments,
+          colorGrading,
+          colorMixer
+        );
       }
 
       const recipe: AiEditRecipe = {
@@ -222,6 +297,8 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
         temperature: adjustments.temperature,
         tint: adjustments.tint,
         grain: adjustments.grain,
+        colorGrading,
+        colorMixer,
       };
 
       let saved;
@@ -252,29 +329,40 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     }
   };
 
+  // インラインオブジェクトを避けるためにメモ化
+  const canvasStyle = useMemo(
+    () => ({ width: windowWidth, height: previewHeight }),
+    [windowWidth, previewHeight]
+  );
+
   const editorPanelHeight = (windowHeight - BOTTOM_CONTROLS_HEIGHT) * 0.4;
 
   return (
     <View style={styles.container}>
       {/* プレビューエリア: Skia Canvas で描画 */}
       <View style={[styles.previewHolder, { height: previewHeight }]}>
-        <Canvas style={{ width: windowWidth, height: previewHeight }}>
+        <Canvas style={canvasStyle}>
           {skImage && (
             <>
-              {/* カラーフィルターを Image の子要素として宣言する */}
-              <SkiaImage
-                image={skImage}
-                x={previewLeft}
-                y={previewTop}
-                width={previewWidth}
-                height={previewHeight - previewTop * 2}
-                fit='contain'
-              >
-                <ColorMatrix matrix={colorMatrix} />
-              </SkiaImage>
+              {/* colorMixer が最外層、colorGrading がその内側、SkiaImage が最内層 */}
+              {/* 適用順: ColorMatrix → colorGrading → colorMixer（保存パスと一致） */}
+              <Group layer={colorMixerPaint}>
+                <Group layer={colorGradingPaint}>
+                  <SkiaImage
+                    image={skImage}
+                    x={previewLeft}
+                    y={previewTop}
+                    width={previewWidth}
+                    height={previewHeight - previewTop * 2}
+                    fit='contain'
+                  >
+                    <ColorMatrix matrix={colorMatrix} />
+                  </SkiaImage>
+                </Group>
+              </Group>
 
-              {/* グレイン: Overlay ブレンドのノイズシェーダーを重ねる */}
-              {adjustments.grain > 0 && grainEffect && (
+              {/* グレインは colorGrading/colorMixer の外側で Overlay ブレンド */}
+              {adjustments.grain > 0 && grainEffect !== null && (
                 <Rect
                   x={previewLeft}
                   y={previewTop}
@@ -301,30 +389,51 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
           },
         ]}
       >
-        <Text style={styles.sectionTitle}>編集</Text>
+        <EditorTabBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          disabled={isSaving}
+        />
 
-        <ScrollView
-          style={styles.adjustmentList}
-          contentContainerStyle={styles.adjustmentListContent}
-          showsVerticalScrollIndicator
-          nestedScrollEnabled
-        >
-          {ADJUSTMENT_KEYS.map(key => {
-            const range = ADJUSTMENT_RANGES[key];
-            return (
-              <AdjustmentSlider
-                key={key}
-                label={range.label}
-                value={adjustments[key]}
-                min={range.min}
-                max={range.max}
-                step={ADJUSTMENT_STEP}
-                onChange={nextValue => handleChangeAdjustment(key, nextValue)}
-                disabled={isSaving}
-              />
-            );
-          })}
-        </ScrollView>
+        {activeTab === 'basic' && (
+          <ScrollView
+            style={styles.adjustmentList}
+            contentContainerStyle={styles.adjustmentListContent}
+            showsVerticalScrollIndicator
+            nestedScrollEnabled
+          >
+            {ADJUSTMENT_KEYS.map(key => {
+              const range = ADJUSTMENT_RANGES[key];
+              return (
+                <AdjustmentSlider
+                  key={key}
+                  adjustmentKey={key}
+                  label={range.label}
+                  value={adjustments[key]}
+                  min={range.min}
+                  max={range.max}
+                  step={ADJUSTMENT_STEP}
+                  onChange={handleChangeAdjustment}
+                  disabled={isSaving}
+                />
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {activeTab === 'grading' && (
+          <ColorGradingPanel
+            colorGrading={colorGrading}
+            onColorGradingChange={handleColorGradingChange}
+          />
+        )}
+
+        {activeTab === 'mixer' && (
+          <ColorMixerPanel
+            colorMixer={colorMixer}
+            onColorMixerChange={handleColorMixerChange}
+          />
+        )}
       </Animated.View>
 
       {/* アクションボタン */}
@@ -336,8 +445,8 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
             { transform: [{ scale: retakeScale }] },
           ]}
           onPress={handleRetake}
-          onPressIn={() => btnPressIn(retakeScale)}
-          onPressOut={() => btnPressOut(retakeScale)}
+          onPressIn={() => animatePressIn(retakeScale)}
+          onPressOut={() => animatePressOut(retakeScale)}
           disabled={isSaving}
         >
           <Text style={styles.secondaryText}>Retake</Text>
@@ -350,8 +459,8 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
             { transform: [{ scale: saveScale }] },
           ]}
           onPress={handleConfirm}
-          onPressIn={() => !isSaving && btnPressIn(saveScale)}
-          onPressOut={() => btnPressOut(saveScale)}
+          onPressIn={() => !isSaving && animatePressIn(saveScale)}
+          onPressOut={() => animatePressOut(saveScale)}
           disabled={isSaving}
         >
           <Text style={styles.primaryText}>

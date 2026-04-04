@@ -8,6 +8,7 @@ import {
 } from '@shopify/react-native-skia';
 import type { SkImage } from '@shopify/react-native-skia';
 
+import { COLOR_CHANNELS } from '../../types/imageProcessing';
 import type {
   AdjustmentState,
   ColorGradingState,
@@ -238,6 +239,13 @@ const GRAIN_SHADER_SRC = `
   }
 `;
 
+// カラーグレーディング・カラーミキサー RuntimeEffectをモジュールスコープでコンパイル;
+// プレビューと保存で同じ effect インスタンスを共有する
+export const colorGradingEffect =
+  Skia.RuntimeEffect.Make(COLOR_GRADING_SHADER_SRC) ?? null;
+export const colorMixerEffect =
+  Skia.RuntimeEffect.Make(COLOR_MIXER_SHADER_SRC) ?? null;
+
 // SkImage に調整値を適用した JPEG base64 を返す（オフスクリーンレンダリング）
 // Canvas コンポーネントに依存しないため保存時に利用する
 // 適用順: カラーマトリクス → カラーグレーディング → カラーミキサー → グレイン
@@ -245,7 +253,7 @@ export const renderFilteredImageToBase64 = (
   skImage: SkImage,
   adj: AdjustmentState,
   colorGrading?: ColorGradingState,
-  colorMixer?: ColorMixerState,
+  colorMixer?: ColorMixerState
 ): string => {
   const w = skImage.width();
   const h = skImage.height();
@@ -273,18 +281,24 @@ export const renderFilteredImageToBase64 = (
           TileMode.Clamp,
           TileMode.Clamp,
           FilterMode.Linear,
-          MipmapMode.None,
+          MipmapMode.None
         );
         const gradPaint = Skia.Paint();
         gradPaint.setShader(
           gradEffect.makeShaderWithChildren(
             [
-              sh.hue, sh.saturation, sh.luminance,
-              mi.hue, mi.saturation, mi.luminance,
-              hi.hue, hi.saturation, hi.luminance,
+              sh.hue,
+              sh.saturation,
+              sh.luminance,
+              mi.hue,
+              mi.saturation,
+              mi.luminance,
+              hi.hue,
+              hi.saturation,
+              hi.luminance,
             ],
-            [imgShader],
-          ),
+            [imgShader]
+          )
         );
         const gradCanvas = gradSurface.getCanvas();
         gradCanvas.drawRect({ x: 0, y: 0, width: w, height: h }, gradPaint);
@@ -296,11 +310,7 @@ export const renderFilteredImageToBase64 = (
 
   // Surface 3: カラーミキサー（省略時はスキップ）
   if (colorMixer) {
-    const channels = [
-      'red', 'orange', 'yellow', 'green',
-      'aqua', 'blue', 'purple', 'magenta',
-    ] as const;
-    const uniforms = channels.flatMap(ch => [
+    const uniforms = COLOR_CHANNELS.flatMap(ch => [
       colorMixer[ch].hue,
       colorMixer[ch].saturation,
       colorMixer[ch].luminance,
@@ -313,7 +323,7 @@ export const renderFilteredImageToBase64 = (
           TileMode.Clamp,
           TileMode.Clamp,
           FilterMode.Linear,
-          MipmapMode.None,
+          MipmapMode.None
         );
         const mixPaint = Skia.Paint();
         mixPaint.setShader(
