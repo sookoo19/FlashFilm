@@ -2,14 +2,14 @@ import { memo, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { AdjustmentKey } from '../types/imageProcessing';
 
-type AdjustmentSliderProps = {
-  adjustmentKey: AdjustmentKey;
+type AdjustmentSliderProps<K extends string = AdjustmentKey> = {
+  adjustmentKey: K;
   label: string;
   value: number;
   min: number;
   max: number;
   step: number;
-  onChange: (key: AdjustmentKey, nextValue: number) => void;
+  onChange: (key: K, nextValue: number) => void;
   disabled?: boolean;
 };
 
@@ -34,7 +34,7 @@ const animatePressOut = (anim: Animated.Value) =>
     useNativeDriver: true,
   }).start();
 
-const AdjustmentSlider = memo(({
+function AdjustmentSliderFn<K extends string>({
   adjustmentKey,
   label,
   value,
@@ -43,7 +43,7 @@ const AdjustmentSlider = memo(({
   step,
   onChange,
   disabled = false,
-}: AdjustmentSliderProps) => {
+}: AdjustmentSliderProps<K>) {
   const isDecrementDisabled = disabled || value <= min;
   const isIncrementDisabled = disabled || value >= max;
 
@@ -73,7 +73,9 @@ const AdjustmentSlider = memo(({
             { transform: [{ scale: decrementScale }] },
           ]}
           onPress={handleDecrement}
-          onPressIn={() => !isDecrementDisabled && animatePressIn(decrementScale)}
+          onPressIn={() =>
+            !isDecrementDisabled && animatePressIn(decrementScale)
+          }
           onPressOut={() => animatePressOut(decrementScale)}
           disabled={isDecrementDisabled}
           accessibilityLabel={`${label}を減らす`}
@@ -92,7 +94,9 @@ const AdjustmentSlider = memo(({
             { transform: [{ scale: incrementScale }] },
           ]}
           onPress={handleIncrement}
-          onPressIn={() => !isIncrementDisabled && animatePressIn(incrementScale)}
+          onPressIn={() =>
+            !isIncrementDisabled && animatePressIn(incrementScale)
+          }
           onPressOut={() => animatePressOut(incrementScale)}
           disabled={isIncrementDisabled}
           accessibilityLabel={`${label}を増やす`}
@@ -104,7 +108,9 @@ const AdjustmentSlider = memo(({
       </View>
     </View>
   );
-});
+}
+
+const AdjustmentSlider = memo(AdjustmentSliderFn) as typeof AdjustmentSliderFn;
 
 const styles = StyleSheet.create({
   container: {
