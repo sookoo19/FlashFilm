@@ -293,6 +293,159 @@ const ColorGradingPanel = memo(function ColorGradingPanel({ ... }) {
 
 ## 次回への課題・疑問点（更新）
 
-- [ ] Step 5: `ImageProcessingScreen.tsx` へのタブバー・パネル統合
+- [x] Step 5: `ImageProcessingScreen.tsx` へのタブバー・パネル統合 ← 完了
 - [ ] `useCallback` の依存配列に不足があるとどんなバグが起きるか体験してみたい
 - [ ] `onChange` インライン関数の問題（`ColorGradingPanel` + `ColorMixerPanel` 両方）をまとめてリファクタリングするタスクを立てる
+
+---
+
+## 追記：Step 5 ImageProcessingScreen 統合・バグ発見（2026-04-04）
+
+**会話の概要**: `ImageProcessingScreen.tsx` に `EditorTabBar`・`ColorGradingPanel`・`ColorMixerPanel` を統合した。セルフレビューで `hasAdjustmentChanged` のバグを発見・修正した。
+
+---
+
+## 今日学んだ概念（追記）
+
+### `&&` が安全なケースと危険なケース ── 型で判断する
+
+- **ルール**: `{value && <Component />}` が危険なのは `value` が `0` や `""` になりうるとき。`boolean` や union string 型なら安全
+- **今回の例**: `activeTab === 'basic'` の評価結果は `true` か `false` の boolean → `&&` で問題ない
+
+```tsx
+// activeTab は 'basic' | 'grading' | 'mixer' — 0 や "" にはならない
+// 比較式の結果は boolean → && は安全
+{activeTab === 'basic' && <ScrollView>...</ScrollView>}
+{activeTab === 'grading' && <ColorGradingPanel ... />}
+{activeTab === 'mixer' && <ColorMixerPanel ... />}
+```
+
+- **危険な例**: `{count && <Text>{count}</Text>}` ← `count` が `0` のとき `0` が画面に出てクラッシュ
+- **覚え方**: 「`&&` の左辺が boolean 以外になりうるか」を確認する
+
+---
+
+### `useMemo` の依存配列を更新するタイミング
+
+- **問題**: state を追加したとき、それを使っている `useMemo` の依存配列の更新を忘れがち
+- **今回のバグ**: `colorGrading`/`colorMixer` を state に追加したが、`hasAdjustmentChanged` の依存配列に含めなかった
+- **症状**: カラーグレーディングだけ変更して保存すると、フィルターなしの元画像が保存される（レシピには変更値が入っているのに矛盾）
+
+```tsx
+// 修正前：adjustments しか監視していない
+const hasAdjustmentChanged = useMemo(
+  () => ADJUSTMENT_KEYS.some(k => adjustments[k] !== DEFAULT_ADJUSTMENTS[k]),
+  [adjustments]  // ← colorGrading/colorMixer が抜けている
+);
+
+// 修正後：3つの state すべてを監視
+const hasAdjustmentChanged = useMemo(
+  () =>
+    ADJUSTMENT_KEYS.some(k => adjustments[k] !== DEFAULT_ADJUSTMENTS[k]) ||
+    JSON.stringify(colorGrading) !== JSON.stringify(DEFAULT_COLOR_GRADING) ||
+    JSON.stringify(colorMixer) !== JSON.stringify(DEFAULT_COLOR_MIXER),
+  [adjustments, colorGrading, colorMixer]
+);
+```
+
+- **`JSON.stringify` 比較の理由**: `colorGrading` はオブジェクト（`Record<ToneRange, ToneGradeState>`）なので `===` では参照比較になり常に `true` になる。中身の値を比較するには `JSON.stringify` で文字列化して比較する
+
+---
+
+## Step 5 で書いたコード
+
+### state の追加（3つ）
+
+```tsx
+const [activeTab, setActiveTab] = useState<EditorTab>('basic');
+const [colorGrading, setColorGrading] =
+  useState<ColorGradingState>(DEFAULT_COLOR_GRADING);
+const [colorMixer, setColorMixer] =
+  useState<ColorMixerState>(DEFAULT_COLOR_MIXER);
+```
+
+**ポイント解説:**
+- `EditorTab = 'basic' | 'grading' | 'mixer'` は `EditorTabBar.tsx` からエクスポートされた型
+- デフォルト値はすべてゼロ（無効果）の状態
+
+### ハンドラの追加
+
+```tsx
+const handleColorGradingChange = useCallback((next: ColorGradingState) => {
+  setColorGrading(next);
+}, []);
+
+const handleColorMixerChange = useCallback((next: ColorMixerState) => {
+  setColorMixer(next);
+}, []);
+```
+
+**ポイント解説:**
+- 依存配列が空なのは `setColorGrading`/`setColorMixer` が React の安定参照だから
+- 単純な `setState` だが `useCallback` でラップしておくことで、将来のバリデーション追加が容易
+
+### 保存処理の更新
+
+```tsx
+// 画像フィルター生成に colorGrading/colorMixer を渡す
+targetBase64 = renderFilteredImageToBase64(
+  skImage!,
+  adjustments,
+  colorGrading,
+  colorMixer
+);
+
+// レシピにも追加
+const recipe: AiEditRecipe = {
+  ...DEFAULT_AI_EDIT_RECIPE,
+  brightness: adjustments.brightness,
+  // ... 省略 ...
+  colorGrading,  // 追加
+  colorMixer,    // 追加
+};
+```
+
+### タブ切り替え UI
+
+```tsx
+<EditorTabBar
+  activeTab={activeTab}
+  onTabChange={setActiveTab}
+  disabled={isSaving}
+/>
+
+{activeTab === 'basic' && (
+  <ScrollView>...</ScrollView>
+)}
+{activeTab === 'grading' && (
+  <ColorGradingPanel
+    colorGrading={colorGrading}
+    onColorGradingChange={handleColorGradingChange}
+  />
+)}
+{activeTab === 'mixer' && (
+  <ColorMixerPanel
+    colorMixer={colorMixer}
+    onColorMixerChange={handleColorMixerChange}
+  />
+)}
+```
+
+**ポイント解説:**
+- `onTabChange={setActiveTab}` は直接 `setter` を渡せる（シグネチャが一致するため）
+- `activeTab === 'xxx'` の評価結果は boolean → `&&` は安全
+
+---
+
+## なぜそう書くか（設計の理由）
+
+- **条件レンダリングに `? :` ではなく `&&` を使った理由**: 3択の切り替えを `? :` でネストすると `a ? X : b ? Y : Z` のように深くなる。`&&` を3行並べた方が読みやすく、各タブが独立して見える
+- **`hasAdjustmentChanged` を `useMemo` で計算する理由**: 「変更があるかどうか」を毎レンダーで計算すると無駄が多い。`adjustments`/`colorGrading`/`colorMixer` が変わった時だけ再計算することで効率化
+
+---
+
+## 次回への課題・疑問点（最終更新）
+
+- [ ] カラーグレーディング・ミキサーの変更を Skia プレビューにも反映する（現状はプレビューに反映されていない）
+- [ ] `JSON.stringify` 比較は深いオブジェクトに対してコストがかかる場合がある。より効率的な比較方法を調べる
+- [ ] `onChange` インライン関数の問題（`ColorGradingPanel` + `ColorMixerPanel` 両方）をまとめてリファクタリング

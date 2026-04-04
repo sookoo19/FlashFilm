@@ -25,6 +25,9 @@ import {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 import AdjustmentSlider from '../../components/AdjustmentSlider';
+import ColorGradingPanel from '../../components/ColorGradingPanel';
+import ColorMixerPanel from '../../components/ColorMixerPanel';
+import EditorTabBar, { type EditorTab } from '../../components/EditorTabBar';
 import {
   buildColorMatrix,
   renderFilteredImageToBase64,
@@ -38,8 +41,12 @@ import {
   ADJUSTMENT_RANGES,
   ADJUSTMENT_STEP,
   DEFAULT_ADJUSTMENTS,
+  DEFAULT_COLOR_GRADING,
+  DEFAULT_COLOR_MIXER,
   type AdjustmentKey,
   type AdjustmentState,
+  type ColorGradingState,
+  type ColorMixerState,
 } from '../../types/imageProcessing';
 import type { RootStackParamList } from '../../types/navigation';
 
@@ -102,6 +109,13 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
   const [adjustments, setAdjustments] =
     useState<AdjustmentState>(DEFAULT_ADJUSTMENTS);
 
+  const [activeTab, setActiveTab] = useState<EditorTab>('basic');
+  const [colorGrading, setColorGrading] = useState<ColorGradingState>(
+    DEFAULT_COLOR_GRADING
+  );
+  const [colorMixer, setColorMixer] =
+    useState<ColorMixerState>(DEFAULT_COLOR_MIXER);
+
   // Editor panel entrance: slides up + fades in on mount
   // useState initializer keeps Animated.Value stable without .current in render
   const [panelTranslateY] = useState(() => new Animated.Value(24));
@@ -158,10 +172,13 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     };
   }, [skImage, windowWidth, previewHeight]);
 
-  // 全スライダーが初期値かどうか
+  // 全スライダーが初期値かどうか（colorGrading/colorMixer も含む）
   const hasAdjustmentChanged = useMemo(
-    () => ADJUSTMENT_KEYS.some(k => adjustments[k] !== DEFAULT_ADJUSTMENTS[k]),
-    [adjustments]
+    () =>
+      ADJUSTMENT_KEYS.some(k => adjustments[k] !== DEFAULT_ADJUSTMENTS[k]) ||
+      JSON.stringify(colorGrading) !== JSON.stringify(DEFAULT_COLOR_GRADING) ||
+      JSON.stringify(colorMixer) !== JSON.stringify(DEFAULT_COLOR_MIXER),
+    [adjustments, colorGrading, colorMixer]
   );
 
   // Skia ColorMatrix（プレビュー Canvas に渡す）
@@ -198,6 +215,14 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     navigation.goBack();
   }, [navigation]);
 
+  const handleColorGradingChange = useCallback((next: ColorGradingState) => {
+    setColorGrading(next);
+  }, []);
+
+  const handleColorMixerChange = useCallback((next: ColorMixerState) => {
+    setColorMixer(next);
+  }, []);
+
   const handleConfirm = async () => {
     if (isSaving) return;
     if (hasAdjustmentChanged && !skImage) {
@@ -215,7 +240,12 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
       if (hasAdjustmentChanged) {
         // オフスクリーンレンダリングで調整済み画像を生成する
         // Canvas コンポーネントへの参照は不要で、同期的に完結する
-        targetBase64 = renderFilteredImageToBase64(skImage!, adjustments);
+        targetBase64 = renderFilteredImageToBase64(
+          skImage!,
+          adjustments,
+          colorGrading,
+          colorMixer
+        );
       }
 
       const recipe: AiEditRecipe = {
@@ -226,6 +256,8 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
         temperature: adjustments.temperature,
         tint: adjustments.tint,
         grain: adjustments.grain,
+        colorGrading,
+        colorMixer,
       };
 
       let saved;
@@ -311,31 +343,51 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
           },
         ]}
       >
-        <Text style={styles.sectionTitle}>編集</Text>
+        <EditorTabBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          disabled={isSaving}
+        />
 
-        <ScrollView
-          style={styles.adjustmentList}
-          contentContainerStyle={styles.adjustmentListContent}
-          showsVerticalScrollIndicator
-          nestedScrollEnabled
-        >
-          {ADJUSTMENT_KEYS.map(key => {
-            const range = ADJUSTMENT_RANGES[key];
-            return (
-              <AdjustmentSlider
-                key={key}
-                adjustmentKey={key}
-                label={range.label}
-                value={adjustments[key]}
-                min={range.min}
-                max={range.max}
-                step={ADJUSTMENT_STEP}
-                onChange={handleChangeAdjustment}
-                disabled={isSaving}
-              />
-            );
-          })}
-        </ScrollView>
+        {activeTab === 'basic' && (
+          <ScrollView
+            style={styles.adjustmentList}
+            contentContainerStyle={styles.adjustmentListContent}
+            showsVerticalScrollIndicator
+            nestedScrollEnabled
+          >
+            {ADJUSTMENT_KEYS.map(key => {
+              const range = ADJUSTMENT_RANGES[key];
+              return (
+                <AdjustmentSlider
+                  key={key}
+                  adjustmentKey={key}
+                  label={range.label}
+                  value={adjustments[key]}
+                  min={range.min}
+                  max={range.max}
+                  step={ADJUSTMENT_STEP}
+                  onChange={handleChangeAdjustment}
+                  disabled={isSaving}
+                />
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {activeTab === 'grading' && (
+          <ColorGradingPanel
+            colorGrading={colorGrading}
+            onColorGradingChange={handleColorGradingChange}
+          />
+        )}
+
+        {activeTab === 'mixer' && (
+          <ColorMixerPanel
+            colorMixer={colorMixer}
+            onColorMixerChange={handleColorMixerChange}
+          />
+        )}
       </Animated.View>
 
       {/* アクションボタン */}
