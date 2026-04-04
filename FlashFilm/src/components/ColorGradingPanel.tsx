@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import AdjustmentSlider from './AdjustmentSlider';
 import {
@@ -93,15 +93,18 @@ const ColorGradingPanel = memo(function ColorGradingPanel({
 }: ColorGradingPanelProps) {
   const [selectedRange, setSelectedRange] = useState<ToneRange>('shadows');
 
-  function handleSliderChange(key: keyof ToneGradeState, value: number) {
-    onColorGradingChange({
-      ...colorGrading,
-      [selectedRange]: {
-        ...colorGrading[selectedRange],
-        [key]: value,
-      },
-    });
-  }
+  const handleSliderChange = useCallback(
+    (key: keyof ToneGradeState, value: number) => {
+      onColorGradingChange({
+        ...colorGrading,
+        [selectedRange]: {
+          ...colorGrading[selectedRange],
+          [key]: value,
+        },
+      });
+    },
+    [colorGrading, selectedRange, onColorGradingChange]
+  );
   return (
     <View style={styles.container}>
       <ToneRangeSelector selected={selectedRange} onSelect={setSelectedRange} />

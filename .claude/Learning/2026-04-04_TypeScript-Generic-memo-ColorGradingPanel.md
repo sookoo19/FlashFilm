@@ -173,7 +173,126 @@ const ColorGradingPanel = memo(function ColorGradingPanel({
 
 ## 次回への課題・疑問点
 
-- [ ] Step 4-3: `ColorMixerPanel.tsx` の実装（8色チップ選択 + H/S/L スライダー）
+- [x] Step 4-3: `ColorMixerPanel.tsx` の実装（8色チップ選択 + H/S/L スライダー）← 完了
 - [ ] Step 5: `ImageProcessingScreen.tsx` へのタブバー・パネル統合
 - [ ] `memo` + Generic のキャストパターン（`as typeof`）を他のコンポーネントでも使えるか確認
 - [ ] `_k`（アンダースコアプレフィックス）の ESLint ルールとの関係を調べる
+
+---
+
+## 追記：ColorMixerPanel 実装・セルフレビュー・useCallback（2026-04-04）
+
+**会話の概要**: `ColorMixerPanel.tsx` を新規実装し、3つのレビュアーによるセルフレビューを実施。指摘に基づいて修正を行い、`useCallback` の依存配列を誤った位置に書くという構文エラーも踏んで修正した。
+
+---
+
+## 今日学んだ概念（追記）
+
+### `&&` vs `? null` ── React Native スタイル配列のルール
+
+- **何か**: スタイル配列の中で条件付きスタイルを渡すとき、`&& styles.xxx` と書くか `? styles.xxx : null` と書くかの違い
+- **なぜ必要か**: `condition && styles.xxx` は `condition` が `false` のとき `false` を配列に残す。React Native は `false` を無視するが、`0` や `""` のような falsy 値は `<View>` の子にレンダーしようとしてクラッシュする。ルールとして `? null` に統一しておくと安全
+- **例え**: 「false は無視できるが、0 はテキストとして画面に出ようとする」。条件チェックで弾かないと予期しないものが表示される
+
+```tsx
+// NG（false が配列に残る）
+style={[styles.chip, isSelected && styles.chipSelected]}
+
+// OK（null は安全に無視される）
+style={[styles.chip, isSelected ? styles.chipSelected : null]}
+```
+
+---
+
+### `useCallback` ── 関数参照を安定させて `memo` を有効にする
+
+- **何か**: `useCallback(fn, [deps])` は、依存配列の値が変わらない限り同じ関数参照を返すフック
+- **なぜ必要か**: `memo` でラップされた子コンポーネントは「props が前回と同じ参照なら再レンダーをスキップ」する。しかし親が再レンダーされると、コンポーネント内の `function` 宣言は毎回新しいオブジェクトとして生成される。結果、`memo` が「props が変わった」と判断して子を再レンダーしてしまう
+- **例え**: 毎回新しい封筒に同じ手紙を入れて届けると、受け取った人は「新しい手紙が来た」と思って読み直してしまう。`useCallback` は「同じ封筒を使い回す」仕組み
+
+```tsx
+// 修正前：レンダーごとに新しい関数が生成される
+function handleSliderChange(key: keyof ToneGradeState, value: number) {
+  onColorGradingChange({ ... });
+}
+
+// 修正後：依存配列の値が変わらない限り同じ参照を再利用
+const handleSliderChange = useCallback(
+  (key: keyof ToneGradeState, value: number) => {
+    onColorGradingChange({
+      ...colorGrading,
+      [selectedRange]: {
+        ...colorGrading[selectedRange],
+        [key]: value,
+      },
+    });
+  },
+  [colorGrading, selectedRange, onColorGradingChange]
+);
+```
+
+**依存配列のルール:**
+- 関数の中で参照している外側の変数をすべて列挙する
+- `colorGrading`・`selectedRange`・`onColorGradingChange` の3つが該当
+- 依存配列に漏れがあると、古い値をクロージャで参照し続けるバグになる
+
+---
+
+## 踏んだ構文エラー：useCallback の依存配列を memo の外に書いてしまった
+
+```tsx
+// 誤り：memo の閉じ括弧の後に依存配列を書いてしまった
+const ColorGradingPanel = memo(function ColorGradingPanel({ ... }) {
+  const handleSliderChange = useCallback(
+    (key, value) => { ... },
+    [colorGrading, selectedRange, onColorGradingChange]
+  );
+  return ( ... );
+},[colorGrading, selectedRange, onColorGradingChange]); // ← これが誤り
+```
+
+- **なぜ間違いか**: `memo(fn)` は第2引数として「props の比較関数」を受け取る。依存配列（`[...]`）を渡すと「配列を比較関数として使おうとしている」とTypeScriptに解釈され、型エラーになる
+- **正しい位置**: `useCallback(fn, [deps])` の `[deps]` は `useCallback` の第2引数。`memo(...)` の外には何も書かない
+
+```tsx
+// 正しい構造
+const ColorGradingPanel = memo(function ColorGradingPanel({ ... }) {
+  const handleSliderChange = useCallback(
+    (key, value) => { ... },
+    [colorGrading, selectedRange, onColorGradingChange]  // ← useCallback の第2引数
+  );
+  return ( ... );
+});  // ← memo の閉じ括弧はシンプルに });
+```
+
+---
+
+## セルフレビューで学んだこと
+
+### 3つのレビュアーを並列起動してまとめて確認する
+- `reviewer`（品質・セキュリティ・パフォーマンス）
+- `simplify-reviewer`（可読性・一貫性・保守性）
+- `vercel-react-native-skills`（React Native ガイドライン照合）
+
+### 全員一致の指摘は優先度最高
+- 未使用インポート `import { Color } from '@shopify/react-native-skia'` は3人全員が指摘 → 即削除
+
+### レビュアーの指摘をすべて受け入れない判断も重要
+| 指摘 | 対応 | 理由 |
+|---|---|---|
+| デザイントークン化 | 非対応 | `tokens.ts` の存在未確認＆既存コンポーネントがリテラル使用で統一 |
+| `onChange` インライン関数 | 非対応 | `ColorGradingPanel.tsx` と同パターン。1ファイルだけ変えると不一致 |
+| `CHANNEL_BACKGROUND_COLORS` 事前計算 | 非対応 | 過剰最適化 |
+
+### StyleSheet に切り出せるものは切り出す
+選択テキストカラーのように「動的でない部分」はインラインオブジェクトではなく `StyleSheet` に定義することで：
+- パフォーマンスが上がる（StyleSheet は最適化される）
+- `ColorGradingPanel.tsx` の `selectorLabelSelected` と対称的な構造になる
+
+---
+
+## 次回への課題・疑問点（更新）
+
+- [ ] Step 5: `ImageProcessingScreen.tsx` へのタブバー・パネル統合
+- [ ] `useCallback` の依存配列に不足があるとどんなバグが起きるか体験してみたい
+- [ ] `onChange` インライン関数の問題（`ColorGradingPanel` + `ColorMixerPanel` 両方）をまとめてリファクタリングするタスクを立てる
