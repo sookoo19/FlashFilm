@@ -59,10 +59,11 @@ const server = http.createServer(async (request, response) => {
   try {
     const rawBody = await readRequestBody(request);
     const payload = JSON.parse(rawBody);
-    const { sampleId, targetBase64, recipe } = payload;
+    const { sampleId, sourceBase64, targetBase64, recipe } = payload;
 
     if (
       !isNonEmptyString(sampleId) ||
+      !isNonEmptyString(sourceBase64) ||
       !isNonEmptyString(targetBase64) ||
       recipe == null ||
       typeof recipe !== 'object'
@@ -74,15 +75,18 @@ const server = http.createServer(async (request, response) => {
     }
 
     const sampleDir = path.join(datasetRoot, sampleId);
+    const sourcePath = path.join(sampleDir, 'source.jpg');
     const targetPath = path.join(sampleDir, 'target.jpg');
     const recipePath = path.join(sampleDir, 'recipe.json');
 
     await mkdir(sampleDir, { recursive: true });
+    await writeFile(sourcePath, Buffer.from(sourceBase64, 'base64'));
     await writeFile(targetPath, Buffer.from(targetBase64, 'base64'));
     await writeFile(recipePath, JSON.stringify(recipe, null, 2), 'utf8');
 
     sendJson(response, 200, {
       sampleId,
+      sourcePath,
       targetPath,
       recipePath,
     });

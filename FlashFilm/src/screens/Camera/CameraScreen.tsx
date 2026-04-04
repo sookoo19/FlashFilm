@@ -238,6 +238,7 @@ const CameraScreen = () => {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 1,
         base64: true,
+        exif: true,
       });
 
       // 撮影成功 → フラッシュ演出（実際のカメラフラッシュを模倣）
@@ -272,6 +273,7 @@ const CameraScreen = () => {
       width: preview.width,
       height: preview.height,
       base64: preview.base64,
+      exif: preview.exif as Record<string, unknown> | null | undefined,
     };
 
     // 画像加工画面へ遷移して、写真データを渡します
