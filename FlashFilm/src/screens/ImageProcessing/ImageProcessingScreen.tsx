@@ -2,6 +2,7 @@ import { type NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   Canvas,
   ColorMatrix,
+  Group,
   Image as SkiaImage,
   Rect,
   Shader,
@@ -30,6 +31,8 @@ import ColorMixerPanel from '../../components/ColorMixerPanel';
 import EditorTabBar, { type EditorTab } from '../../components/EditorTabBar';
 import {
   buildColorMatrix,
+  colorGradingEffect,
+  colorMixerEffect,
   renderFilteredImageToBase64,
 } from '../../services/image/skiaFilter';
 import { saveDatasetSample } from '../../services/storage/datasetStorage';
@@ -40,6 +43,7 @@ import {
 import {
   ADJUSTMENT_RANGES,
   ADJUSTMENT_STEP,
+  COLOR_CHANNELS,
   DEFAULT_ADJUSTMENTS,
   DEFAULT_COLOR_GRADING,
   DEFAULT_COLOR_MIXER,
@@ -201,6 +205,43 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
     [adjustments.grain]
   );
 
+  // カラーグレーディング用イメージフィルター（shadows/midtones/highlights が変わった時だけ再生成）
+  const colorGradingPaint = useMemo(() => {
+    if (!colorGradingEffect) return undefined;
+    const { shadows: sh, midtones: mi, highlights: hi } = colorGrading;
+    const builder = Skia.RuntimeShaderBuilder(colorGradingEffect);
+    builder.setUniform('sh_h', [sh.hue]);
+    builder.setUniform('sh_s', [sh.saturation]);
+    builder.setUniform('sh_l', [sh.luminance]);
+    builder.setUniform('mi_h', [mi.hue]);
+    builder.setUniform('mi_s', [mi.saturation]);
+    builder.setUniform('mi_l', [mi.luminance]);
+    builder.setUniform('hi_h', [hi.hue]);
+    builder.setUniform('hi_s', [hi.saturation]);
+    builder.setUniform('hi_l', [hi.luminance]);
+    const paint = Skia.Paint();
+    paint.setImageFilter(
+      Skia.ImageFilter.MakeRuntimeShader(builder, 'image', null)
+    );
+    return paint;
+  }, [colorGrading]);
+
+  // カラーミキサー用イメージフィルター（8チャンネル分のユニフォームを一括セット）
+  const colorMixerPaint = useMemo(() => {
+    if (!colorMixerEffect) return undefined;
+    const builder = Skia.RuntimeShaderBuilder(colorMixerEffect);
+    COLOR_CHANNELS.forEach((ch, i) => {
+      builder.setUniform(`ch_${i * 3}`, [colorMixer[ch].hue]);
+      builder.setUniform(`ch_${i * 3 + 1}`, [colorMixer[ch].saturation]);
+      builder.setUniform(`ch_${i * 3 + 2}`, [colorMixer[ch].luminance]);
+    });
+    const paint = Skia.Paint();
+    paint.setImageFilter(
+      Skia.ImageFilter.MakeRuntimeShader(builder, 'image', null)
+    );
+    return paint;
+  }, [colorMixer]);
+
   const handleChangeAdjustment = useCallback(
     (key: AdjustmentKey, nextValue: number) => {
       const { min, max } = ADJUSTMENT_RANGES[key];
@@ -303,19 +344,24 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
         <Canvas style={canvasStyle}>
           {skImage && (
             <>
-              {/* カラーフィルターを Image の子要素として宣言する */}
-              <SkiaImage
-                image={skImage}
-                x={previewLeft}
-                y={previewTop}
-                width={previewWidth}
-                height={previewHeight - previewTop * 2}
-                fit='contain'
-              >
-                <ColorMatrix matrix={colorMatrix} />
-              </SkiaImage>
+              {/* colorMixer が最外層、colorGrading がその内側、SkiaImage が最内層 */}
+              {/* 適用順: ColorMatrix → colorGrading → colorMixer（保存パスと一致） */}
+              <Group layer={colorMixerPaint}>
+                <Group layer={colorGradingPaint}>
+                  <SkiaImage
+                    image={skImage}
+                    x={previewLeft}
+                    y={previewTop}
+                    width={previewWidth}
+                    height={previewHeight - previewTop * 2}
+                    fit='contain'
+                  >
+                    <ColorMatrix matrix={colorMatrix} />
+                  </SkiaImage>
+                </Group>
+              </Group>
 
-              {/* グレイン: Overlay ブレンドのノイズシェーダーを重ねる */}
+              {/* グレインは colorGrading/colorMixer の外側で Overlay ブレンド */}
               {adjustments.grain > 0 && grainEffect !== null && (
                 <Rect
                   x={previewLeft}

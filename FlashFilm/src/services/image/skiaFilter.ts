@@ -8,9 +8,7 @@ import {
 } from '@shopify/react-native-skia';
 import type { SkImage } from '@shopify/react-native-skia';
 
-import {
-  COLOR_CHANNELS,
-} from '../../types/imageProcessing';
+import { COLOR_CHANNELS } from '../../types/imageProcessing';
 import type {
   AdjustmentState,
   ColorGradingState,
@@ -240,6 +238,13 @@ const GRAIN_SHADER_SRC = `
     return half4(g, g, g, 1.0);
   }
 `;
+
+// カラーグレーディング・カラーミキサー RuntimeEffectをモジュールスコープでコンパイル;
+// プレビューと保存で同じ effect インスタンスを共有する
+export const colorGradingEffect =
+  Skia.RuntimeEffect.Make(COLOR_GRADING_SHADER_SRC) ?? null;
+export const colorMixerEffect =
+  Skia.RuntimeEffect.Make(COLOR_MIXER_SHADER_SRC) ?? null;
 
 // SkImage に調整値を適用した JPEG base64 を返す（オフスクリーンレンダリング）
 // Canvas コンポーネントに依存しないため保存時に利用する
