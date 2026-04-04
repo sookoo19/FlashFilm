@@ -3,4 +3,5 @@ export type CapturedPhoto = {
   height: number;
   base64?: string;
   uri: string;
+  exif?: Record<string, unknown> | null;
 };

@@ -1,0 +1,70 @@
+{
+  "version": 3,
+  "presetId": "flash_base",
+  "brightness": 1,
+  "contrast": 1,
+  "saturation": -1,
+  "temperature": -1,
+  "tint": -1,
+  "grain": 6,
+  "colorGrading": {
+    "shadows": {
+      "hue": 2,
+      "saturation": 1,
+      "luminance": 1
+    },
+    "midtones": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    },
+    "highlights": {
+      "hue": 1,
+      "saturation": 3,
+      "luminance": -3
+    }
+  },
+  "colorMixer": {
+    "red": {
+      "hue": 0,
+      "saturation": 32,
+      "luminance": 0
+    },
+    "orange": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    },
+    "yellow": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    },
+    "green": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    },
+    "aqua": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    },
+    "blue": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    },
+    "purple": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    },
+    "magenta": {
+      "hue": 0,
+      "saturation": 0,
+      "luminance": 0
+    }
+  },
+  "metadata": null
+}

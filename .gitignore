@@ -141,3 +141,5 @@ vite.config.ts.timestamp-*
 # iCloud sync files
 *.icloud
 * 2/
+
+FlashFilm/dataset/step4/**/*.jpg

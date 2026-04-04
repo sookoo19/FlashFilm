@@ -38,6 +38,7 @@ import {
 import { saveDatasetSample } from '../../services/storage/datasetStorage';
 import {
   DEFAULT_AI_EDIT_RECIPE,
+  type AiCapturedMetadata,
   type AiEditRecipe,
 } from '../../types/aiEditRecipe';
 import {
@@ -289,6 +290,28 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
         );
       }
 
+      const exif = photo.exif ?? null;
+      const metadata: AiCapturedMetadata | null = exif
+        ? {
+            iso:
+              typeof exif['ISOSpeedRatings'] === 'number'
+                ? exif['ISOSpeedRatings']
+                : Array.isArray(exif['ISOSpeedRatings'])
+                  ? (exif['ISOSpeedRatings'] as number[])[0] ?? null
+                  : null,
+            exposureTime:
+              typeof exif['ExposureTime'] === 'number'
+                ? exif['ExposureTime']
+                : null,
+            whiteBalance:
+              exif['WhiteBalance'] === 0 ? 'auto' : exif['WhiteBalance'] === 1 ? 'custom' : null,
+            flashFired:
+              typeof exif['Flash'] === 'number'
+                ? (exif['Flash'] & 0x1) === 1
+                : null,
+          }
+        : null;
+
       const recipe: AiEditRecipe = {
         ...DEFAULT_AI_EDIT_RECIPE,
         brightness: adjustments.brightness,
@@ -299,6 +322,7 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
         grain: adjustments.grain,
         colorGrading,
         colorMixer,
+        metadata,
       };
 
       let saved;
@@ -308,9 +332,9 @@ const ImageProcessingScreen = ({ route, navigation }: Props) => {
         await FileSystem.writeAsStringAsync(tempPath, targetBase64, {
           encoding: FileSystem.EncodingType.Base64,
         });
-        saved = await saveDatasetSample({ targetUri: tempPath, recipe });
+        saved = await saveDatasetSample({ sourceUri: photo.uri, targetUri: tempPath, recipe });
       } else {
-        saved = await saveDatasetSample({ targetUri: photo.uri, recipe });
+        saved = await saveDatasetSample({ sourceUri: photo.uri, targetUri: photo.uri, recipe });
       }
 
       Alert.alert(

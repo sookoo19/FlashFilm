@@ -41,8 +41,9 @@ export type AiEditRecipe = {
   temperature: number;
   tint: number;
   grain: number;
-  colorGrading: ColorGradingState; // 追加
+  colorGrading: ColorGradingState;
   colorMixer: ColorMixerState;
+  metadata: AiCapturedMetadata | null;
 };
 
 export const DEFAULT_AI_EDIT_RECIPE: Readonly<AiEditRecipe> = {
@@ -54,6 +55,7 @@ export const DEFAULT_AI_EDIT_RECIPE: Readonly<AiEditRecipe> = {
   temperature: 0,
   tint: 0,
   grain: 0,
-  colorGrading: DEFAULT_COLOR_GRADING, // 追加
+  colorGrading: DEFAULT_COLOR_GRADING,
   colorMixer: DEFAULT_COLOR_MIXER,
+  metadata: null,
 };

@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import type { AiEditRecipe } from '../../types/aiEditRecipe';
 
 type SaveDatasetSampleInput = {
+  sourceUri: string;
   targetUri: string;
   recipe: AiEditRecipe;
   sampleId?: string;
@@ -11,12 +12,14 @@ type SaveDatasetSampleInput = {
 
 export type SaveDatasetSampleResult = {
   sampleId: string;
+  sourcePath: string;
   targetPath: string;
   recipePath: string;
 };
 
 type SaveToCollectorInput = {
   sampleId: string;
+  sourceBase64: string;
   targetBase64: string;
   recipe: AiEditRecipe;
 };
@@ -114,6 +117,7 @@ const readTargetAsBase64 = async (targetUri: string): Promise<string> => {
 
 const saveToCollector = async ({
   sampleId,
+  sourceBase64,
   targetBase64,
   recipe,
 }: SaveToCollectorInput): Promise<SaveDatasetSampleResult> => {
@@ -126,6 +130,7 @@ const saveToCollector = async ({
       },
       body: JSON.stringify({
         sampleId,
+        sourceBase64,
         targetBase64,
         recipe,
       }),
@@ -145,6 +150,7 @@ const saveToCollector = async ({
 };
 
 const saveToAppSandbox = async ({
+  sourceUri,
   targetUri,
   recipe,
   sampleId,
@@ -158,9 +164,14 @@ const saveToAppSandbox = async ({
 
   await FileSystem.makeDirectoryAsync(sampleDir, { intermediates: true });
 
+  const sourcePath = `${sampleDir}source.jpg`;
   const targetPath = `${sampleDir}target.jpg`;
   const recipePath = `${sampleDir}recipe.json`;
 
+  await FileSystem.copyAsync({
+    from: normalizeUri(sourceUri),
+    to: sourcePath,
+  });
   await FileSystem.copyAsync({
     from: normalizeUri(targetUri),
     to: targetPath,
@@ -176,12 +187,14 @@ const saveToAppSandbox = async ({
 
   return {
     sampleId: resolvedSampleId,
+    sourcePath,
     targetPath,
     recipePath,
   };
 };
 
 export const saveDatasetSample = async ({
+  sourceUri,
   targetUri,
   recipe,
   sampleId,
@@ -189,16 +202,19 @@ export const saveDatasetSample = async ({
   const resolvedSampleId = sampleId ?? createSampleId();
 
   if (__DEV__) {
+    const sourceBase64 = await readTargetAsBase64(sourceUri);
     const targetBase64 = await readTargetAsBase64(targetUri);
 
     return saveToCollector({
       sampleId: resolvedSampleId,
+      sourceBase64,
       targetBase64,
       recipe,
     });
   }
 
   return saveToAppSandbox({
+    sourceUri,
     targetUri,
     recipe,
     sampleId: resolvedSampleId,
